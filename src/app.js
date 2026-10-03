@@ -1,12 +1,21 @@
+/**
+ * 装配层：解析 URL 参数 → 选数据源 → 采样 → rAF 合并渲染。
+ * 确定性测试模式（?test=1）不依赖定时器：同步喂帧，或按 ?tick=N 步进 N 帧。
+ */
 import { applyUnit } from './units.js';
 import { createStore, emptySnapshot } from './store.js';
-import { initialSnapshot, createMockSource } from './sources/mock.js';
+import { initialSnapshot, stepSnapshot, createMockSource, mulberry32 } from './sources/mock.js';
 import { renderShell, paint, collectProbe } from './render.js';
+import { createScheduler } from './scheduler.js';
 
 const params = new URLSearchParams(location.search);
 const testMode = params.get('test') === '1';
 const seed = Number(params.get('seed') || 7);
 const freeze = params.get('freeze');
+const tickN = Math.max(0, Number(params.get('tick') || 0));
+// 测试模式默认同步出结果（探针靠 --dump-dom 抓取，不能依赖 rAF 时序）；
+// ?raf=1 时才走真实渲染路径，用于验证"同帧多次更新只画一次"。
+const useRaf = !testMode || params.get('raf') === '1';
 
 const panel = document.getElementById('panel');
 
@@ -31,22 +40,39 @@ function frozenNow() {
 }
 
 const store = createStore(emptySnapshot(Date.now()));
-let paintCount = 0;
-
-function doPaint(s) {
-  paint(panel, s);
-  paintCount += 1;
-  if (testMode) {
-    const probe = document.getElementById('probe');
-    if (probe) probe.textContent = 'PROBE_JSON:' + JSON.stringify(collectProbe(panel, s, paintCount));
-  }
+const stats = { updates: 0, paints: 0, samples: 0, firstRate: null };
+function writeProbe(s) {
+  const probe = document.getElementById('probe');
+  if (probe) probe.textContent = 'PROBE_JSON:' + JSON.stringify(collectProbe(panel, s, stats));
 }
 
-// 测试模式要同步出结果（探针靠 --dump-dom 抓取，不能依赖 rAF 时序）
-store.subscribe((s) => (testMode ? doPaint(s) : requestAnimationFrame(() => doPaint(s))));
+function renderFrame(s) {
+  paint(panel, s);
+  stats.paints += 1;
+  if (testMode) writeProbe(s);
+}
+
+// 生产走 requestAnimationFrame 合并；测试模式用同步调度，保证 --dump-dom 能拿到确定结果。
+const scheduler = createScheduler(renderFrame, useRaf ? (cb) => requestAnimationFrame(cb) : (cb) => cb());
+
+function onUpdate(s) {
+  stats.updates += 1;
+  scheduler.push(s);
+}
+
+store.subscribe(onUpdate);
 
 if (testMode) {
-  store.update(initialSnapshot(frozenNow()));
+  const rnd = mulberry32(seed);
+  let s = initialSnapshot(frozenNow());
+  stats.samples = 1;
+  stats.firstRate = s.output.tokPerSec;
+  store.update(s);
+  for (let i = 1; i < tickN; i++) {
+    s = stepSnapshot(s, rnd, frozenNow() + i * 1000);
+    stats.samples = i + 1;
+    store.update(s);
+  }
 } else {
   const source = createMockSource({ seed, intervalMs: 1000, now: () => Date.now() });
   source.start((s) => store.update(s));

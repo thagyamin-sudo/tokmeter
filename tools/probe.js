@@ -166,17 +166,39 @@ function checkCards(p) {
   within('卡片高 / 面板宽', c.heightRatio, 0.25, 0.31);
 }
 
+/** 任务 8：采样步进与 rAF 合并渲染。 */
+function checkRealtime(p) {
+  if (!p.samples) {
+    add('实时模式数据', false, 'p.samples 缺失（产物早于实时刷新实现）');
+    return;
+  }
+  eq('采样：步进帧数', p.samples.count, 3);
+  add('采样：数值随步进变化', p.samples.rate !== p.samples.firstRate,
+    'firstRate=' + p.samples.firstRate + ', rate=' + p.samples.rate);
+  // tick=3 表示模拟 3 秒：冻结基点 23:48:30 前进 2 秒
+  eq('采样：时钟随步进前进', p.texts.clock, '23:48:32');
+  eq('渲染：同步模式每帧都画', p.paintCount, 3);
+  eq('渲染：更新计数', p.updateCount, 3);
+}
+
 async function main() {
-  let url = '';
   let server = null;
+  let base = '';
   if (target) {
-    url = pathToFileURL(resolve(ROOT, target)).href + (query ? '?' + query : '');
+    base = pathToFileURL(resolve(ROOT, target)).href;
   } else {
     server = await startServer();
-    url = 'http://127.0.0.1:' + server.address().port + '/tools/frame.html?q=' + encodeURIComponent(query);
+    base = 'http://127.0.0.1:' + server.address().port + '/tools/frame.html?q=';
   }
+  // 追加参数必须拼进被测页面自己的 query：
+  // http 模式下页面在 iframe 里，参数要进 q= 里面，拼到外壳 URL 上页面收不到。
+  const makeUrl = (extra) => {
+    const q = extra ? query + '&' + extra : query;
+    if (target) return base + (q ? '?' + q : '');
+    return base + encodeURIComponent(q);
+  };
 
-  const dom = await dumpDom(url);
+  const dom = await dumpDom(makeUrl(''));
   const m = dom.match(/PROBE_JSON:(\{[\s\S]*?\})<\/pre>/);
   if (!m) {
     console.error('探针输出缺失。DOM 片段：\n' + dom.slice(0, 800));
@@ -186,6 +208,15 @@ async function main() {
   const p = JSON.parse(m[1]);
   checkShell(p);
   checkCards(p);
+
+  // 第二次运行：3 帧步进 + rAF 合并路径
+  const dom2 = await dumpDom(makeUrl('tick=3'));
+  const m2 = dom2.match(/PROBE_JSON:(\{[\s\S]*?\})<\/pre>/);
+  if (!m2) {
+    add('实时模式探针', false, '第二次运行没有拿到探针输出');
+  } else {
+    checkRealtime(JSON.parse(m2[1]));
+  }
 
   const failed = checks.filter((c) => !c.ok);
   for (const c of checks) console.log((c.ok ? '  ok   ' : '  FAIL ') + c.label + (c.ok ? '' : '  → ' + c.detail));
