@@ -11,7 +11,7 @@
  */
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { extname, join, normalize, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -59,21 +59,16 @@ function startServer() {
 function shoot(urlStr) {
   const dir = join(tmpdir(), 'llm-shot');
   mkdirSync(dir, { recursive: true });
-  const script = join(dir, 'shot.cmd');
+  // 截图不需要捕获 Edge 的 stdout，因此直接 spawn（不经 cmd 中转）：
+  // 经 .cmd 时命令行是 UTF-8 而 cmd 按 OEM 码页解析，中文输出路径会被弄坏导致静默不落盘。
   const args = [
     '--headless=new', '--disable-gpu', '--no-first-run', '--hide-scrollbars',
     '--user-data-dir=' + join(dir, 'profile'), '--window-size=520,900',
     '--force-device-scale-factor=' + scale, '--virtual-time-budget=3000',
     '--screenshot=' + out, urlStr,
   ];
-  // .cmd 里的 % 必须翻倍，否则 %3D 之类会被批处理当参数展开吃掉
-  writeFileSync(
-    script,
-    '@echo off\r\n"' + EDGE + '" ' + args.map((a) => '"' + a.replace(/%/g, '%%') + '"').join(' ') + ' >nul 2>nul\r\n',
-    'utf8'
-  );
   return new Promise((done) => {
-    const child = spawn('cmd.exe', ['/d', '/c', script], { stdio: 'ignore', windowsHide: true });
+    const child = spawn(EDGE, args, { stdio: 'ignore', windowsHide: true });
     const timer = setTimeout(() => {
       child.kill();
       done('timeout');
@@ -94,5 +89,11 @@ const port = server.address().port;
 const url = 'http://127.0.0.1:' + port + '/tools/frame.html?q=' + encodeURIComponent(query);
 const result = await shoot(url);
 server.close();
-console.log(result === 'ok' ? '已写出 ' + out : '截图失败：' + result);
-process.exit(result === 'ok' ? 0 : 1);
+// Edge 正常退出不代表文件真的落盘（实测出现过静默不生成），必须自己确认
+const wrote = existsSync(out) && statSync(out).size > 0;
+if (result !== 'ok' || !wrote) {
+  console.error('截图失败：' + (result === 'ok' ? '进程正常退出但未生成 ' + out : result));
+  process.exit(1);
+}
+console.log('已写出 ' + out + '（' + statSync(out).size + ' 字节）');
+process.exit(0);
