@@ -7,6 +7,8 @@ import { createStore, emptySnapshot } from './store.js';
 import { initialSnapshot, stepSnapshot, createMockSource, mulberry32 } from './sources/mock.js';
 import { renderShell, paint, collectProbe } from './render.js';
 import { createScheduler } from './scheduler.js';
+import { createHttpSource } from './sources/http.js';
+import { parsePrometheus, toSnapshot } from './sources/vllm-metrics.js';
 
 const params = new URLSearchParams(location.search);
 const testMode = params.get('test') === '1';
@@ -73,7 +75,28 @@ if (testMode) {
     stats.samples = i + 1;
     store.update(s);
   }
+  if (params.get('fail') === '1') {
+    // 数据源不可达时的降级帧：状态变 error，其余字段沿用最后一帧（曲线保留、布局不变）
+    store.update({ ...s, status: 'error' });
+  }
 } else {
-  const source = createMockSource({ seed, intervalMs: 1000, now: () => Date.now() });
-  source.start((s) => store.update(s));
+  pickSource().start((s) => store.update(s));
+}
+
+/** 数据源选择：?source=http|vllm&endpoint=<url>，缺省用模拟引擎。 */
+function pickSource() {
+  const kind = params.get('source') || 'mock';
+  const endpoint = params.get('endpoint') || '';
+  if (kind === 'http' && endpoint) {
+    return createHttpSource({ endpoint, intervalMs: 1000, now: () => Date.now() });
+  }
+  if (kind === 'vllm' && endpoint) {
+    return createHttpSource({
+      endpoint,
+      intervalMs: 1000,
+      now: () => Date.now(),
+      transform: async (res, prev, now) => toSnapshot(parsePrometheus(await res.text()), prev, now),
+    });
+  }
+  return createMockSource({ seed, intervalMs: 1000, now: () => Date.now() });
 }
