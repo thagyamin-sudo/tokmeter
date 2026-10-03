@@ -32,7 +32,7 @@ const ASCII_KEY_PLACEHOLDER = 'PUT-YOUR-KEY-HERE';
 
 function sanitizeTemplate(text) {
   try {
-    const raw = JSON.parse(text);
+    const raw = JSON.parse(text.replace(/^\uFEFF/, ''));
     if (typeof raw.apiKey === 'string' && /[^\x00-\x7F]/.test(raw.apiKey)) {
       raw.apiKey = ASCII_KEY_PLACEHOLDER;
       return { text: JSON.stringify(raw, null, 2) + '\n', replacedKey: true };

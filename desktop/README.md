@@ -45,6 +45,18 @@ cd desktop
 npx electron-builder --win nsis     # 产物在 desktop/dist/
 ```
 
+国内网络下务必先设镜像，否则 electron-builder 会去 GitHub 拉 133MB 的 electron 包
+（实测约 100KB/s 且长时间卡在 `downloaded label=electron progress=100%` 之后）：
+
+```powershell
+$env:ELECTRON_MIRROR = "https://npmmirror.com/mirrors/electron/"
+$env:ELECTRON_BUILDER_BINARIES_MIRROR = "https://npmmirror.com/mirrors/electron-builder-binaries/"
+npx electron-builder --win nsis     # 设了镜像后本次实测 21.9s 完成
+```
+
+> 本机 shell 里可能带着 `ELECTRON_RUN_AS_NODE=1`（某些 Electron 宿主会自动注入），
+> 打包/运行前 `Remove-Item Env:\ELECTRON_RUN_AS_NODE` 更稳妥。
+
 输出 `Tokmeter-0.1.0-setup.exe`（NSIS，`oneClick:false` + `perMachine:false`，安装时可以自己选目录）。
 安装包内只有必要文件；面板、采集器、图标、配置模板通过 `extraResources` 落到 `resources/`。
 

@@ -38,7 +38,8 @@ function coerce(raw) {
 export function loadState() {
   let raw = null;
   try {
-    raw = JSON.parse(readFileSync(statePath, 'utf8'));
+    // 去掉可能的 UTF-8 BOM：记事本/部分编辑器保存时会加，JSON.parse 会被它噎住
+    raw = JSON.parse(readFileSync(statePath, 'utf8').replace(/^\uFEFF/, ''));
   } catch {
     raw = null;
   }
