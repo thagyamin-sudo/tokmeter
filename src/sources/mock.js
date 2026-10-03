@@ -52,7 +52,7 @@ export function initialSnapshot(now) {
   s.status = 'live';
   s.output.history = seedOutputHistory();
   s.output.tokPerSec = 257;
-  s.requests = { active: 8, queued: 1, capacity: 12 };
+  s.requests = { active: 8, queued: 1, capacity: 10 }; // 参考截图进度条 ≈ 80% 绿 + 10% 橙
   s.input = { tokPerSec: 1700, prefillAvgMs: 320 };
   s.kvCache = { usage: 0.16, hitRate: 0.93, headroom: '余量充足' };
   s.mtp = { ratio: 0.69, tar: 1.99 };

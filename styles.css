@@ -141,11 +141,169 @@ body {
   height: calc(var(--u) * 19);
 }
 
-/* ---------- 卡片网格（卡片本体由任务 7 填充） ---------- */
+/* ---------- 卡片网格 ---------- */
 .grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: calc(var(--u) * 2.6);
+}
+
+.card {
+  height: calc(var(--u) * 28.5);
+  background: var(--card);
+  border-radius: calc(var(--u) * 3.2);
+  padding: calc(var(--u) * 3);
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 2.2);
+  overflow: hidden;
+}
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 1.8);
+}
+.card-icon {
+  display: block;
+  width: calc(var(--u) * 3.6);
+  height: calc(var(--u) * 3.6);
+}
+.card-title {
+  font-size: calc(var(--u) * 3);
+  font-weight: 700;
+}
+.card-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+/* 请求状态 */
+.card-body.req {
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: calc(var(--u) * 2.6);
+}
+.req-line {
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--u) * 1.4);
+  font-size: calc(var(--u) * 3.4);
+  font-weight: 700;
+}
+.req-num {
+  font-size: calc(var(--u) * 4.6);
+  font-weight: 700;
+}
+.req-label { margin-right: calc(var(--u) * 1.6); }
+.bar {
+  display: flex;
+  width: 100%;
+  height: calc(var(--u) * 2.1);
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--track);
+}
+.bar-run { height: 100%; background: var(--green); }
+.bar-queue { height: 100%; background: var(--orange); border-radius: 999px; }
+
+/* 输入 Token */
+.card-body.input-body {
+  flex-direction: column;
+  justify-content: space-between;
+}
+.value-line {
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--u) * 1.2);
+}
+.value-big {
+  font-size: calc(var(--u) * 6.4);
+  font-weight: 700;
+  line-height: 1.05;
+}
+.value-unit {
+  font-size: calc(var(--u) * 3);
+  font-weight: 700;
+}
+.foot-line {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 1.6);
+  font-size: calc(var(--u) * 3);
+  font-weight: 700;
+}
+.foot-icon {
+  display: block;
+  width: calc(var(--u) * 3.4);
+  height: calc(var(--u) * 3.4);
+}
+
+/* 环形卡（KV Cache / MTP / 统一内存） */
+.card-body.ring-body {
+  flex-direction: row;
+  align-items: center;
+  gap: calc(var(--u) * 2.8);
+}
+.ring-wrap {
+  position: relative;
+  flex: 0 0 auto;
+  width: calc(var(--u) * 18.5);
+  height: calc(var(--u) * 18.5);
+}
+.ring {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.ring-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--u) * 3.6);
+  font-weight: 700;
+}
+#kv-arc { stroke: var(--blue); }
+#mtp-arc { stroke: var(--magenta); }
+#mem-arc { stroke: var(--green); }
+.ring-side {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 1);
+  font-size: calc(var(--u) * 2.7);
+  font-weight: 700;
+  white-space: nowrap; /* "Cache Hit 93%" 必须单行，否则卡片会被撑高、比例失真 */
+}
+.ring-side .green { color: var(--green); }
+.ring-side .value-mid { font-size: calc(var(--u) * 4.4); }
+
+/* GPU 活跃度 */
+.card-body.gpu-body {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--u) * 2.4);
+}
+.gpu-value {
+  font-size: calc(var(--u) * 8);
+  font-weight: 700;
+  line-height: 1;
+  color: var(--lime);
+}
+.gpu-state {
+  margin-top: calc(var(--u) * 1.4);
+  font-size: calc(var(--u) * 2.8);
+  font-weight: 700;
+  color: var(--lime);
+}
+.gpu-bars {
+  display: block;
+  flex: 0 0 auto;
+  width: calc(var(--u) * 21);
+  height: calc(var(--u) * 15);
 }
 
 /* ---------- 底部栏 ---------- */

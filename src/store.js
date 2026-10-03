@@ -8,7 +8,7 @@ export function emptySnapshot(now) {
   return {
     model: { name: 'Qwen3.8-Flash', engine: 'vLLM', nodes: 'Dual DGX Spark', link: 'up' },
     output: { tokPerSec: 0, history: [] },
-    requests: { active: 0, queued: 0, capacity: 12 },
+    requests: { active: 0, queued: 0, capacity: 10 },
     input: { tokPerSec: 0, prefillAvgMs: 0 },
     kvCache: { usage: 0, hitRate: 0, headroom: '余量充足' },
     mtp: { ratio: 0, tar: 1 },

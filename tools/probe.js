@@ -130,6 +130,42 @@ function checkShell(p) {
   near('面板宽 = min(92vw,420)', p.panel.w, Math.min(0.92 * p.viewport.w, 420), 1.5);
 }
 
+/** 任务 7：六张数据卡。 */
+function checkCards(p) {
+  const c = p.cards;
+  if (!c) {
+    add('卡片数据', false, 'p.cards 缺失（卡片尚未实现）');
+    return;
+  }
+  eq('请求状态：卡标题', c.requests.title, '请求状态');
+  eq('请求状态：活动数', c.requests.active, '8');
+  eq('请求状态：排队数', c.requests.queued, '1');
+  near('请求状态：绿色段占比', c.requests.run / c.requests.total, 0.8, 0.03);
+  near('请求状态：排队段占比', c.requests.queue / c.requests.total, 0.1, 0.03);
+  eq('输入 Token：卡标题', c.input.title, '输入 Token');
+  eq('输入 Token：数值', c.input.rate, '1.7K');
+  eq('输入 Token：单位', c.input.unit, 'tok/s');
+  eq('输入 Token：脚注', c.input.foot, 'Prefill 均值');
+  eq('KV Cache：卡标题', c.kv.title, 'KV Cache');
+  eq('KV Cache：中心值', c.kv.value, '16%');
+  eq('KV Cache：余量文案', c.kv.headroom, '余量充足');
+  eq('KV Cache：命中率', c.kv.hit, 'Cache Hit 93%');
+  near('KV Cache：弧比例', c.kv.ratio, 0.16, 0.01);
+  eq('MTP：中心值', c.mtp.value, '69%');
+  near('MTP：弧比例', c.mtp.ratio, 0.69, 0.01);
+  eq('MTP：TAR', c.mtp.tar, '1.99');
+  eq('统一内存：中心值', c.mem.value, '82%');
+  near('统一内存：弧比例', c.mem.ratio, 0.82, 0.01);
+  eq('统一内存：节点', c.mem.node, 'S1');
+  eq('统一内存：容量', c.mem.pair, '105/128G');
+  eq('统一内存：可用', c.mem.free, '23G');
+  eq('GPU：卡标题', c.gpu.title, 'GPU 活跃度');
+  eq('GPU：数值', c.gpu.value, '93%');
+  eq('GPU：状态', c.gpu.state, '计算中');
+  eq('GPU：柱条数', c.gpu.bars, 15);
+  within('卡片高 / 面板宽', c.heightRatio, 0.25, 0.31);
+}
+
 async function main() {
   let url = '';
   let server = null;
@@ -149,6 +185,7 @@ async function main() {
   }
   const p = JSON.parse(m[1]);
   checkShell(p);
+  checkCards(p);
 
   const failed = checks.filter((c) => !c.ok);
   for (const c of checks) console.log((c.ok ? '  ok   ' : '  FAIL ') + c.label + (c.ok ? '' : '  → ' + c.detail));
