@@ -11,15 +11,22 @@
 </style>
 </head>
 <body>
-<iframe id="stage" src="../index.html"></iframe>
+<iframe id="stage"></iframe>
 <pre id="probe" hidden></pre>
 <script>
-  // 同源：把 iframe 内部的探针输出搬到父页面，便于 --dump-dom 抓取。
+  const q = new URLSearchParams(location.search).get('q') || '';
   const stage = document.getElementById('stage');
+  const out = document.getElementById('probe');
   stage.addEventListener('load', () => {
-    const inner = stage.contentDocument.getElementById('probe');
-    if (inner) document.getElementById('probe').textContent = inner.textContent;
+    // 同源：把 iframe 内部的探针输出搬到父页面，便于 --dump-dom 抓取。
+    try {
+      const inner = stage.contentDocument.getElementById('probe');
+      out.textContent = inner ? inner.textContent : 'PROBE_JSON:{}';
+    } catch (err) {
+      out.textContent = 'PROBE_ERROR:' + err.message;
+    }
   });
+  stage.src = '../index.html' + (q ? '?' + q : '');
 </script>
 </body>
 </html>

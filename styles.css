@@ -36,14 +36,141 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* --u 由 src/app.js 写入（面板宽度的 1%），此处仅为 JS 生效前的兜底值 */
+/* --u 由 src/app.js 写入（面板宽度的 1%），此处仅为 JS 生效前的兜底值。
+   面板内一切尺寸都写成 calc(var(--u) * N)，任何视口下比例都一致。 */
 .panel {
   --u: 3.9px;
   width: min(92vw, 420px);
   background: var(--bg);
   border-radius: calc(var(--u) * 4.4);
   padding: calc(var(--u) * 3.4);
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 2.8);
   overflow: hidden;
+}
+
+/* ---------- 标题栏 ---------- */
+.hdr {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 2.8);
+  height: calc(var(--u) * 11);
+}
+.hdr-icon {
+  flex: 0 0 auto;
+  width: calc(var(--u) * 9.4);
+  height: calc(var(--u) * 9.4);
+}
+.hdr-titles {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 0.5);
+}
+.hdr-name {
+  font-size: calc(var(--u) * 4);
+  font-weight: 700;
+  line-height: 1.15;
+}
+.hdr-sub {
+  font-size: calc(var(--u) * 2.9);
+  font-weight: 700;
+  line-height: 1.15;
+}
+.hdr-link {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 1);
+  font-size: calc(var(--u) * 3.2);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.chev {
+  display: block;
+  width: calc(var(--u) * 3);
+  height: calc(var(--u) * 3);
+}
+
+/* ---------- Hero：实时输出 Token ---------- */
+.hero {
+  position: relative;
+  height: calc(var(--u) * 26.8);
+  border-radius: calc(var(--u) * 3.6);
+  background: var(--hero-bg);
+  border: calc(var(--u) * 0.25) solid var(--hero-border);
+  padding: calc(var(--u) * 3.2);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.hero-info {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 1.4);
+}
+.hero-label {
+  font-size: calc(var(--u) * 3);
+  font-weight: 700;
+}
+.hero-value {
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--u) * 1.6);
+}
+.hero-num {
+  font-size: calc(var(--u) * 11.5);
+  font-weight: 700;
+  line-height: 0.95;
+}
+.hero-unit {
+  font-size: calc(var(--u) * 3.3);
+  font-weight: 700;
+}
+.hero-foot {
+  font-size: calc(var(--u) * 2.8);
+  font-weight: 700;
+}
+.hero-chart {
+  position: absolute;
+  right: calc(var(--u) * 2.6);
+  top: calc(var(--u) * 4);
+  width: calc(var(--u) * 45);
+  height: calc(var(--u) * 19);
+}
+
+/* ---------- 卡片网格（卡片本体由任务 7 填充） ---------- */
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: calc(var(--u) * 2.6);
+}
+
+/* ---------- 底部栏 ---------- */
+.ftr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: calc(var(--u) * 8.8);
+}
+.ftr-clock {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 1.8);
+  font-size: calc(var(--u) * 3.2);
+  font-weight: 700;
+}
+.ftr-actions {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 3.4);
+}
+.ftr-icon {
+  display: block;
+  width: calc(var(--u) * 4.4);
+  height: calc(var(--u) * 4.4);
 }
 
 #probe { color: var(--text-dim); font-size: 12px; }
