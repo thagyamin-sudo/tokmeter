@@ -101,7 +101,14 @@ function setWidthPct(root, id, pct) {
 function setArc(root, id, ratio) {
   const node = root.querySelector('#' + id);
   if (!node) return;
+  // 未知比例（客户端视图里没有环语义的卡片）不画弧：圆头端点在 0 长度时会留一个小圆点
+  if (!Number.isFinite(ratio)) {
+    node.setAttribute('stroke-linecap', 'butt');
+    node.setAttribute('stroke-dasharray', '0 1');
+    return;
+  }
   const g = ringGeometry(ratio, RING_R, RING_STROKE);
+  node.setAttribute('stroke-linecap', 'round');
   node.setAttribute('stroke-dasharray', g.dasharray);
   node.setAttribute('stroke-dashoffset', String(g.dashoffset));
 }
@@ -274,7 +281,8 @@ export function paintClientCards(root, s) {
   setWidthPct(root, 'bar-queue', (1 - rate) * 100);
 
   setText(root, 'input-rate', formatRate(s.input.tokPerSec));
-  setText(root, 'input-foot', Number.isFinite(s.input.prefillAvgMs) ? Math.round(s.input.prefillAvgMs) + 'ms' : '--');
+  // 脚注保留标签语义：只写数字会让人不知道这是什么（标签在 applyViewLabels 里设成 TTFT 均值）
+  setText(root, 'input-foot', Number.isFinite(s.input.prefillAvgMs) ? 'TTFT ' + Math.round(s.input.prefillAvgMs) + 'ms' : 'TTFT --');
 
   setText(root, 'kv-value', Number.isFinite(c.ttftP50) ? Math.round(c.ttftP50) + 'ms' : '--');
   setText(root, 'kv-headroom', Number.isFinite(c.ttftP95) ? 'P95 ' + Math.round(c.ttftP95) + 'ms' : 'P95 --');

@@ -237,6 +237,7 @@ function checkClientView(p) {
   eq('客户端视图：成本', p.cards.mem.free, '$6.00');
   eq('客户端视图：可用率', p.cards.gpu.value, '95%');
   eq('客户端视图：可用率副文案', p.cards.gpu.state, '部分失败');
+  eq('客户端视图：输入卡脚注带标签', p.cards.input.foot, 'TTFT 320ms');
   eq('客户端视图：折线仍是 60 点', p.spark.points, 60);
   eq('客户端视图：柱条 15 根', p.cards.gpu.bars, 15);
   // 云 API 不可能提供的服务端内部量：必须保持未知，不能编造 0
