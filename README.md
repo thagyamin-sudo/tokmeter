@@ -61,7 +61,7 @@ python -m http.server 8000
 ## 开发与验证
 
 ```bash
-node --test                                      # 60 个单测（纯逻辑 + 构建 + 对抗性边界）
+node --test                                      # 61 个单测（纯逻辑 + 构建 + 对抗性边界 + 真实 HTTP 端到端）
 node tools/probe.js                              # E2E 探针：真实 390x844 视口 + 320x700 窄屏，59 项断言
 node tools/probe.js --target=llm-monitor.html    # 同一套断言跑在离线单文件产物上
 node build.js                                    # 由 src/ + styles.css 重新生成 llm-monitor.html
@@ -101,13 +101,13 @@ tests/                       单测；tests/verify-sources.test.js 是独立对�
 | 每秒刷新：数字/折线/进度条/三个环形/柱条 | ✅ 生产走 1s 采样 + rAF 合并，合并语义有单测 |
 | 时钟为本地时间（秒级） | ✅ |
 | 单文件双击离线可用 | ✅ 探针在 file:// 下 55/55（窄屏 4 项需 iframe 承载，显式跳过） |
-| vLLM metrics 解析 | ✅ 解析与映射有单测；端到端需你提供地址 |
+| vLLM metrics 解析 | ✅ 含一条真实 HTTP 端到端测试（本地伪造 /metrics），另可用你的地址实测 |
 | 端点异常显示"未连接"且布局不塌陷 | ✅ 探针断言面板宽高不变、曲线保留最后一帧 |
-| node --test 全绿、无第三方依赖 | ✅ 60/60 |
+| node --test 全绿、无第三方依赖 | ✅ 61/61 |
 
 ## 已知限制
 
 - 退避时序（间隔 × 2ⁿ 封顶 4×）没有精确计时断言：Windows 定时器粒度约 15ms，精确计时必然 flaky。
 - 没有请求超时 / AbortController：若 fetch 永不 settle，该次轮询会一直占用（请求串行，不会堆积）。
-- vLLM 模式只在单测与注入契约层面验证，未对接真实 vLLM 实例。
+- vLLM 模式已用本地伪造的 /metrics 做真实 HTTP 端到端验证，但**未对接过真实 vLLM 实例**（字段名随版本变化的兼容性需实测）。
 - 照片存在透视与反光，配色是按参考图反推的估计值；如需更准，请在真实设备上目视微调 styles.css 的 token。
