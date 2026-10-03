@@ -151,6 +151,7 @@ function checkCards(p) {
   eq('KV Cache：中心值', c.kv.value, '16%');
   eq('KV Cache：余量文案', c.kv.headroom, '余量充足');
   eq('KV Cache：命中率', c.kv.hit, 'Cache Hit 93%');
+  eq('KV Cache：命中率文案不得被省略号截断', c.kv.clipped, false);
   near('KV Cache：弧比例', c.kv.ratio, 0.16, 0.01);
   eq('MTP：中心值', c.mtp.value, '69%');
   near('MTP：弧比例', c.mtp.ratio, 0.69, 0.01);

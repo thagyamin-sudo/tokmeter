@@ -299,6 +299,11 @@ export function collectProbe(root, s, stats) {
         value: read('kv-value'),
         headroom: read('kv-headroom'),
         hit: read('kv-hit'),
+        // 省略号兜底很容易把正常文案也吃掉（曾把 "Cache Hit 93%" 截成 "Cache Hit …"），必须断言
+        clipped: (() => {
+          const n = root.querySelector('#kv-hit');
+          return n ? n.scrollWidth > n.clientWidth + 1 : false;
+        })(),
         ratio: arcRatio(root.querySelector('#kv-arc')),
       },
       mtp: {

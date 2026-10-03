@@ -266,13 +266,13 @@ body {
 .card-body.ring-body {
   flex-direction: row;
   align-items: center;
-  gap: calc(var(--u) * 2.8);
+  gap: calc(var(--u) * 2.2);
 }
 .ring-wrap {
   position: relative;
   flex: 0 0 auto;
-  width: calc(var(--u) * 19.4);
-  height: calc(var(--u) * 19.4);
+  width: calc(var(--u) * 18.4);
+  height: calc(var(--u) * 18.4);
 }
 .ring {
   display: block;
@@ -295,7 +295,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: calc(var(--u) * 1);
-  font-size: calc(var(--u) * 2.7);
+  font-size: calc(var(--u) * 2.6);
   font-weight: 700;
   white-space: nowrap; /* "Cache Hit 93%" 必须单行，否则卡片会被撑高、比例失真 */
   flex: 1 1 auto;
@@ -1351,6 +1351,11 @@ function collectProbe(root, s, stats) {
         value: read('kv-value'),
         headroom: read('kv-headroom'),
         hit: read('kv-hit'),
+        // 省略号兜底很容易把正常文案也吃掉（曾把 "Cache Hit 93%" 截成 "Cache Hit …"），必须断言
+        clipped: (() => {
+          const n = root.querySelector('#kv-hit');
+          return n ? n.scrollWidth > n.clientWidth + 1 : false;
+        })(),
         ratio: arcRatio(root.querySelector('#kv-arc')),
       },
       mtp: {
