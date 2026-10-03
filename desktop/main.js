@@ -25,7 +25,7 @@ import {
 import { ensureConfigFile } from './lib/config-file.js';
 import { getState, loadState, saveState } from './lib/state.js';
 import { importCollectorModules, startCollector } from './lib/collector-host.js';
-import { applyWidgetCss, buildPanelUrl, createWidgetWindow } from './lib/widget-window.js';
+import { applyAlwaysOnTop, applyWidgetCss, buildPanelUrl, createWidgetWindow } from './lib/widget-window.js';
 import { createTray } from './lib/tray.js';
 
 // ---------- 启动参数 ----------
@@ -37,6 +37,8 @@ const optValue = (name) => {
   return hit ? hit.slice(prefix.length) : null;
 };
 const SELFTEST = hasFlag('selftest');
+/** 诊断用：--login-item=on|off|status，直接改/读开机自启并退出（不动窗口） */
+const LOGIN_ITEM = optValue('login-item');
 const SHOT_PATH = optValue('shot');
 const SHOT_DELAY = Number(optValue('shot-delay') || 2500);
 const SHOT_EXIT = hasFlag('shot-exit');
@@ -140,8 +142,8 @@ function onBoundsChange() {
 
 function setAlwaysOnTop(flag) {
   ctx.state = saveState({ alwaysOnTop: !!flag });
-  if (ctx.win && !ctx.win.isDestroyed()) ctx.win.setAlwaysOnTop(!!flag, 'floating');
-  log('始终置顶 -> ' + (flag ? '开' : '关'));
+  const actual = applyAlwaysOnTop(ctx.win, !!flag);
+  log('始终置顶 -> ' + (flag ? '开' : '关') + '（生效：' + actual + '）');
   refreshTray();
 }
 
@@ -201,6 +203,7 @@ async function reportCollectorProblem() {
 async function bootCollector() {
   const cfg = ensureConfigFile();
   log('配置文件：' + cfg.path + (cfg.created ? '（首次运行，已生成模板' + (cfg.from ? ' ← ' + cfg.from : '') + '）' : '（已存在）'));
+  if (cfg.replacedKey) log('模板里的 apiKey 是中文占位（HTTP 头放不下非 ASCII），已换成 ' + 'PUT-YOUR-KEY-HERE，请填写真实 key');
 
   const started = await startCollector({
     configFile: configPath,
@@ -299,6 +302,24 @@ async function boot() {
   setInterval(() => {
     if (ctx.collector.ok) refreshTray();
   }, 5000).unref?.();
+}
+
+// ---------- 开机自启诊断（--login-item=on|off|status） ----------
+function runLoginItemCommand(mode) {
+  const before = getAutoStart();
+  if (mode === 'on' || mode === 'off') setAutoStart(mode === 'on');
+  const after = getAutoStart();
+  const payload = {
+    mode,
+    before,
+    after,
+    packaged: app.isPackaged,
+    execPath: process.execPath,
+    args: autoStartArgs(),
+  };
+  log('开机自启：' + before + ' -> ' + after + '（' + JSON.stringify(payload) + '）');
+  console.log('LOGIN_ITEM_RESULT ' + JSON.stringify(payload));
+  return mode === 'status' ? true : before !== after || mode === 'status';
 }
 
 // ---------- 自检（--selftest） ----------
@@ -455,28 +476,41 @@ if (!app.requestSingleInstanceLock()) {
     }
   });
 
-  await app.whenReady();
-
-  if (SELFTEST) {
-    const ok = await runSelfTest();
-    app.exit(ok ? 0 : 1);
-  } else {
-    await boot();
-    if (SHOT_PATH) {
-      setTimeout(async () => {
-        try {
-          const img = await ctx.win.webContents.capturePage();
-          writeFileSync(SHOT_PATH, img.toPNG());
-          const size = img.getSize();
-          log('截图已保存 ' + SHOT_PATH + ' ' + size.width + 'x' + size.height);
-        } catch (err) {
-          log('截图失败：' + (err && err.message ? err.message : err));
-        }
-        if (SHOT_EXIT) {
-          ctx.quitting = true;
-          app.quit();
-        }
-      }, Math.max(0, SHOT_DELAY));
-    }
-  }
+  // ！主进程 ESM 入口里禁止顶层 await：Electron 要等模块图求值完才发 ready，
+  // 顶层 `await app.whenReady()` 会自己把自己锁死（实测 Electron 37.10.3 必现），所以走 .then()。
+  app
+    .whenReady()
+    .then(async () => {
+      if (LOGIN_ITEM) {
+        const ok = runLoginItemCommand(LOGIN_ITEM);
+        app.exit(ok ? 0 : 1);
+        return;
+      }
+      if (SELFTEST) {
+        const ok = await runSelfTest();
+        app.exit(ok ? 0 : 1);
+        return;
+      }
+      await boot();
+      if (SHOT_PATH) {
+        setTimeout(async () => {
+          try {
+            const img = await ctx.win.webContents.capturePage();
+            writeFileSync(SHOT_PATH, img.toPNG());
+            const size = img.getSize();
+            log('截图已保存 ' + SHOT_PATH + ' ' + size.width + 'x' + size.height);
+          } catch (err) {
+            log('截图失败：' + (err && err.message ? err.message : err));
+          }
+          if (SHOT_EXIT) {
+            ctx.quitting = true;
+            app.quit();
+          }
+        }, Math.max(0, SHOT_DELAY));
+      }
+    })
+    .catch((err) => {
+      console.error('[tokmeter] 启动失败：' + (err && err.stack ? err.stack : err));
+      app.exit(1);
+    });
 }

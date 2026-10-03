@@ -17,7 +17,11 @@ let cache = null;
 function coerce(raw) {
   const merged = Object.assign({}, DEFAULT_STATE, raw && typeof raw === 'object' ? raw : {});
   const b = merged.bounds && typeof merged.bounds === 'object' ? merged.bounds : {};
-  const num = (v) => (Number.isFinite(Number(v)) ? Math.round(Number(v)) : null);
+  // 注意：Number(null) === 0，必须先把 null/undefined/'' 挡掉，否则「没记过位置」会变成 (0,0)
+  const num = (v) => {
+    if (v === null || v === undefined || v === '') return null;
+    return Number.isFinite(Number(v)) ? Math.round(Number(v)) : null;
+  };
   return {
     bounds: {
       x: num(b.x),

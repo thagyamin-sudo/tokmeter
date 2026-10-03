@@ -22,10 +22,31 @@ export const FALLBACK_TEMPLATE = [
   '',
 ].join('\n');
 
-/** 确保配置文件存在；返回 { path, created, from }。 */
+/**
+ * 仓库示例里的 apiKey 是中文占位（"在这里填你的 key…"）。
+ * HTTP 头只能是 Latin-1，采集器拿它发请求会直接抛
+ * "Cannot convert argument to a ByteString"，报错信息对用户毫无意义。
+ * 所以首次生成时把它换成 ASCII 占位：一样是「请填这里」，但报错会变成干净的 401。
+ */
+const ASCII_KEY_PLACEHOLDER = 'PUT-YOUR-KEY-HERE';
+
+function sanitizeTemplate(text) {
+  try {
+    const raw = JSON.parse(text);
+    if (typeof raw.apiKey === 'string' && /[^\x00-\x7F]/.test(raw.apiKey)) {
+      raw.apiKey = ASCII_KEY_PLACEHOLDER;
+      return { text: JSON.stringify(raw, null, 2) + '\n', replacedKey: true };
+    }
+  } catch {
+    // 模板不是合法 JSON：原样落盘，让用户在编辑器里改
+  }
+  return { text, replacedKey: false };
+}
+
+/** 确保配置文件存在；返回 { path, created, from, replacedKey }。 */
 export function ensureConfigFile() {
   mkdirSync(userDir, { recursive: true });
-  if (existsSync(configPath)) return { path: configPath, created: false, from: null };
+  if (existsSync(configPath)) return { path: configPath, created: false, from: null, replacedKey: false };
   const template = configTemplateCandidates().find((p) => existsSync(p));
   let text = FALLBACK_TEMPLATE;
   if (template) {
@@ -35,6 +56,7 @@ export function ensureConfigFile() {
       text = FALLBACK_TEMPLATE;
     }
   }
-  writeFileSync(configPath, text, 'utf8');
-  return { path: configPath, created: true, from: template || 'builtin' };
+  const clean = sanitizeTemplate(text);
+  writeFileSync(configPath, clean.text, 'utf8');
+  return { path: configPath, created: true, from: template || 'builtin', replacedKey: clean.replacedKey };
 }

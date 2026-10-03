@@ -37,6 +37,22 @@ export function buildPanelUrl({ view = 'client', port = 8787 } = {}) {
   return url.href;
 }
 
+/**
+ * 置顶开关。
+ *
+ * 实测（Electron 37.10.3 / Windows 11，透明无边框窗）：
+ *   ctor { alwaysOnTop: true }      → isAlwaysOnTop() === false   ✗
+ *   setAlwaysOnTop(true)            → false（默认 level 'floating' 在 Win 上是空操作）✗
+ *   setAlwaysOnTop(true, 'floating')→ false                        ✗
+ *   setAlwaysOnTop(true, 'screen-saver') → true                    ✓
+ * 所以这里必须显式传 level，别改回单参数版本。
+ */
+export function applyAlwaysOnTop(win, flag) {
+  if (!win || win.isDestroyed()) return false;
+  win.setAlwaysOnTop(!!flag, flag ? 'screen-saver' : 'normal');
+  return win.isAlwaysOnTop();
+}
+
 /** 注入拖拽/透明样式；返回 insertCSS 的 key（便于排查）。 */
 export function applyWidgetCss(win) {
   return win.webContents.insertCSS(WIDGET_CSS);
@@ -52,8 +68,20 @@ export function sanitizeBounds(raw) {
   };
   const width = clamp(src.width, MIN_SIZE.width, 2000, DEFAULT_SIZE.width);
   const height = clamp(src.height, MIN_SIZE.height, 2000, DEFAULT_SIZE.height);
-  const hasPos = Number.isFinite(Number(src.x)) && Number.isFinite(Number(src.y));
-  if (!hasPos) return { width, height };
+  const hasPos =
+    src.x !== null && src.x !== undefined && src.x !== '' &&
+    src.y !== null && src.y !== undefined && src.y !== '' &&
+    Number.isFinite(Number(src.x)) && Number.isFinite(Number(src.y));
+  // 没记过位置就居中（Chromium 默认会把窗口丢到左上角，很难看）
+  if (!hasPos) {
+    const area = screen.getPrimaryDisplay().workArea;
+    return {
+      x: Math.round(area.x + (area.width - width) / 2),
+      y: Math.round(area.y + (area.height - height) / 2),
+      width,
+      height,
+    };
+  }
   const x = Math.round(Number(src.x));
   const y = Math.round(Number(src.y));
   const area = screen.getDisplayMatching({ x, y, width, height }).workArea;
@@ -94,7 +122,7 @@ export function createWidgetWindow({ bounds, alwaysOnTop = true, onBoundsChange 
     },
   });
 
-  if (alwaysOnTop) win.setAlwaysOnTop(true, 'floating');
+  applyAlwaysOnTop(win, alwaysOnTop);
 
   // 每次导航后重新注入（insertCSS 不跨文档保留）
   win.webContents.on('did-finish-load', () => {
