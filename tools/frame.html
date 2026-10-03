@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>frame harness</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #000; }
+  /* 无头 Edge 有最小窗口宽度，外层视口不可控；
+     固定尺寸 iframe 才能得到被测页面真实的 390x844 视口。 */
+  iframe { width: 390px; height: 844px; border: 0; display: block; }
+</style>
+</head>
+<body>
+<iframe id="stage" src="../index.html"></iframe>
+<pre id="probe" hidden></pre>
+<script>
+  // 同源：把 iframe 内部的探针输出搬到父页面，便于 --dump-dom 抓取。
+  const stage = document.getElementById('stage');
+  stage.addEventListener('load', () => {
+    const inner = stage.contentDocument.getElementById('probe');
+    if (inner) document.getElementById('probe').textContent = inner.textContent;
+  });
+</script>
+</body>
+</html>
