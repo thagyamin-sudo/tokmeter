@@ -322,6 +322,7 @@ node tools/shot.js --out=ref/mine.png           # スクリーンショット（
 | --- | --- | --- |
 | ユニットテスト | `node --test` | **91 / 91 合格**、失敗 0、約 2.8 秒 |
 | E2E プローブ | `node tools/probe.js` | **98 / 98 の検証項目に合格**（ビューポート 390×844、パネル 358.8×521.89） |
+| 単一ファイルプローブ | `node tools/probe.js --target=llm-monitor.html` | **92 / 92 の検証項目に合格**（ビューポート 504×805、パネル 420×610.56） |
 | 単一ファイルビルド | `node build.js` | `llm-monitor.html` 81,299 バイト（79.4 KB）、インライン化モジュール 11 個。再ビルドは **SHA256 がバイト単位で一致** |
 | インストーラー | `Tokmeter-0.1.0-setup.exe` | 92,069,277 バイト（87.8 MB）、SHA256 `9CDD7BAF…C5165F90` |
 

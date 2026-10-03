@@ -321,6 +321,7 @@ node tools/shot.js --out=ref/mine.png           # 스크린샷(ref/와 나란히
 | --- | --- | --- |
 | 단위 테스트 | `node --test` | **91 / 91 통과**, 실패 0, 약 2.8초 |
 | E2E 프로브 | `node tools/probe.js` | **98 / 98 검증 통과**(뷰포트 390×844, 패널 358.8×521.89) |
+| 단일 파일 프로브 | `node tools/probe.js --target=llm-monitor.html` | **92 / 92 검증 통과**(뷰포트 504×805, 패널 420×610.56) |
 | 단일 파일 빌드 | `node build.js` | `llm-monitor.html` 81,299바이트(79.4 KB), 인라인 모듈 11개. 재빌드 시 **SHA256이 바이트 단위로 동일** |
 | 설치 프로그램 | `Tokmeter-0.1.0-setup.exe` | 92,069,277바이트(87.8 MB), SHA256 `9CDD7BAF…C5165F90` |
 

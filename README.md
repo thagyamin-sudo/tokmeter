@@ -318,6 +318,7 @@ node tools/shot.js --out=ref/mine.png        # 截图，用于与 ref/ 参考图
 | --- | --- | --- |
 | 单元测试 | `node --test` | **91 / 91 通过**，0 失败，约 2.8 秒 |
 | 端到端探针 | `node tools/probe.js` | **98 / 98 断言通过**（视口 390×844，面板 358.8×521.89） |
+| 单文件探针 | `node tools/probe.js --target=llm-monitor.html` | **92 / 92 断言通过**（视口 504×805，面板 420×610.56） |
 | 单文件构建 | `node build.js` | 输出 `llm-monitor.html` 81,299 字节（79.4 KB），内联模块 11 个；重复构建 **SHA256 逐字节一致** |
 | 安装包 | `Tokmeter-0.1.0-setup.exe` | 92,069,277 字节（87.8 MB），SHA256 `9CDD7BAF…C5165F90` |
 

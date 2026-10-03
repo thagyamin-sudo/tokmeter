@@ -322,6 +322,7 @@ The probe and screenshot scripts bring their own static server and headless Edge
 | --- | --- | --- |
 | Unit tests | `node --test` | **91 / 91 passed**, 0 failed, about 2.8 s |
 | End-to-end probe | `node tools/probe.js` | **98 / 98 assertions passed** (viewport 390×844, panel 358.8×521.89) |
+| Single-file probe | `node tools/probe.js --target=llm-monitor.html` | **92 / 92 assertions passed** (viewport 504×805, panel 420×610.56) |
 | Single-file build | `node build.js` | `llm-monitor.html` at 81,299 bytes (79.4 KB), 11 inlined modules; repeat builds are **byte-identical (SHA256)** |
 | Installer | `Tokmeter-0.1.0-setup.exe` | 92,069,277 bytes (87.8 MB), SHA256 `9CDD7BAF…C5165F90` |
 
