@@ -351,6 +351,20 @@ body {
   width: calc(var(--u) * 4.4);
   height: calc(var(--u) * 4.4);
 }
+/* 页脚三个图标是真按钮：复位浏览器默认样式，保持与参考截图逐像素一致 */
+button.ftr-icon {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  -webkit-app-region: no-drag;   /* 桌面壳里可点，但不参与窗口拖拽 */
+  transition: opacity 0.15s, color 0.15s;
+}
+button.ftr-icon:hover { opacity: 0.7; }
+button.ftr-icon.is-off { color: var(--text-dim); opacity: 0.5; }   /* 已暂停 */
+button.ftr-icon.is-flash { color: var(--green); }                  /* 操作成功反馈 */
 
 /* 可选：灵动岛样式的胶囊（?island=1） */
 .island {

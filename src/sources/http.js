@@ -197,6 +197,11 @@ export function createHttpSource({ endpoint, intervalMs = HTTP_DEFAULT_INTERVAL,
     get status() {
       return status;
     },
+    /** 立即拉一次（页脚"刷新"按钮用）。 */
+    pollOnce() {
+      if (!running) return;
+      return httpAttempt(runId);
+    },
     start(onSampleFn) {
       if (running) return;
       running = true;

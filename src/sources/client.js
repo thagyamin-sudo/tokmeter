@@ -158,6 +158,11 @@ export function createClientSource({ endpoint, intervalMs = 1000, fetchImpl = fe
     get status() {
       return status;
     },
+    /** 立即拉一次（页脚"刷新"按钮用）。 */
+    pollOnce() {
+      if (!running) return;
+      return attempt(runId);
+    },
     start(fn) {
       if (running) return;
       running = true;

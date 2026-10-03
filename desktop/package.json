@@ -1,0 +1,84 @@
+{
+  "name": "tokmeter",
+  "productName": "Tokmeter",
+  "version": "0.1.0",
+  "description": "Tokmeter（词元表）— LLM 状态监控桌面悬浮窗（Electron 外壳 + 内置采集器）",
+  "private": true,
+  "type": "module",
+  "main": "main.js",
+  "author": "Tokmeter",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "selftest": "electron . --selftest",
+    "dist": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "37.10.3",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.tokmeter.app",
+    "productName": "Tokmeter",
+    "copyright": "Copyright © 2026 Tokmeter",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "lib/**/*.js",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../llm-monitor.html",
+        "to": "llm-monitor.html"
+      },
+      {
+        "from": "../collector",
+        "to": "collector",
+        "filter": [
+          "**/*.js"
+        ]
+      },
+      {
+        "from": "resources/collector-package.json",
+        "to": "collector/package.json"
+      },
+      {
+        "from": "../icons/icon-192.png",
+        "to": "icons/icon-192.png"
+      },
+      {
+        "from": "../icons/icon-512.png",
+        "to": "icons/icon-512.png"
+      },
+      {
+        "from": "../collector.config.example.json",
+        "to": "collector.config.example.json"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "../icons/icon-512.png",
+      "artifactName": "${productName}-${version}-setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Tokmeter",
+      "uninstallDisplayName": "Tokmeter（词元表）"
+    }
+  }
+}

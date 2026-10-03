@@ -237,6 +237,14 @@ function checkClientView(p) {
   eq('客户端视图：成本', p.cards.mem.free, '$6.00');
   eq('客户端视图：可用率', p.cards.gpu.value, '95%');
   eq('客户端视图：可用率副文案', p.cards.gpu.state, '部分失败');
+  // 页脚按钮：必须存在，且点击后真的有效果
+  eq('按钮：刷新存在', p.controls.refresh, true);
+  eq('按钮：复制存在', p.controls.copy, true);
+  eq('按钮：电源存在', p.controls.power, true);
+  eq('按钮：电源点击后进入暂停', p.controls.press.power.paused, true);
+  eq('按钮：电源进入暂停有视觉状态', p.controls.press.power.isOff, true);
+  eq('按钮：复制内容以 Tokmeter 开头', String(p.controls.press.copy.text || '').startsWith('Tokmeter'), true);
+  eq('按钮：复制内容含真实模型名', String(p.controls.press.copy.text || '').includes('deepseek-chat'), true);
   eq('客户端视图：输入卡脚注带标签', p.cards.input.foot, 'TTFT 320ms');
   eq('客户端视图：折线仍是 60 点', p.spark.points, 60);
   eq('客户端视图：柱条 15 根', p.cards.gpu.bars, 15);
@@ -312,8 +320,8 @@ async function main() {
     checkDegrade(JSON.parse(m3[1]), p);
   }
 
-  // 第五次运行：客户端视图（云 API 观测）
-  const dom5 = await dumpDom(makeUrl('view=client'));
+  // 第五次运行：客户端视图（云 API 观测）+ 页脚按钮点击回归
+  const dom5 = await dumpDom(makeUrl('view=client&press=power,copy'));
   const m5 = dom5.match(/PROBE_JSON:(\{[\s\S]*?\})<\/pre>/);
   if (!m5) {
     add('客户端视图探针', false, '客户端视图运行没有拿到探针输出');

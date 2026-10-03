@@ -359,6 +359,20 @@ body {
   width: calc(var(--u) * 4.4);
   height: calc(var(--u) * 4.4);
 }
+/* 页脚三个图标是真按钮：复位浏览器默认样式，保持与参考截图逐像素一致 */
+button.ftr-icon {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  -webkit-app-region: no-drag;   /* 桌面壳里可点，但不参与窗口拖拽 */
+  transition: opacity 0.15s, color 0.15s;
+}
+button.ftr-icon:hover { opacity: 0.7; }
+button.ftr-icon.is-off { color: var(--text-dim); opacity: 0.5; }   /* 已暂停 */
+button.ftr-icon.is-flash { color: var(--green); }                  /* 操作成功反馈 */
 
 /* 可选：灵动岛样式的胶囊（?island=1） */
 .island {
@@ -393,7 +407,7 @@ body {
 /* ===== src/format.js ===== */
 /**
  * 数值格式化：面板上所有数字都经这里产出，保证越界/缺失值不会渲染成 NaN、Infinity。
- * 约定：任何非有限数一律返回占位符，负数按 0 处理。
+ * 约定：任何非有限数一律返回占位符，负数按 0 处理；比例类一律夹取到 0~1。
  */
 
 /** 速率：257 → '257'，1700 → '1.7K'，2340000 → '2.3M'。 */
@@ -414,11 +428,9 @@ function formatClock(d) {
   return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
 }
 
-/** 0.16 → '16%'。 */
+/** 0.16 → '16%'。夹取到 0~1：环弧本身只能画 0~1，文字显示 1600% 会与图形自相矛盾。 */
 function formatPercent(ratio) {
   if (!Number.isFinite(ratio)) return '--';
-  // 夹取到 0~1：环弧本身就只能画 0~1，文字若显示 1600%/-50% 会与图形自相矛盾
-  // （最常见的接线错误是按 0~100 传比例，这里兜住）
   return Math.round(Math.min(1, Math.max(0, ratio)) * 100) + '%';
 }
 
@@ -428,7 +440,7 @@ function formatMemPair(used, total) {
   return Math.max(0, Math.round(used)) + '/' + Math.max(0, Math.round(total)) + 'G';
 }
 
-/** 23 → '23G'（"可用" 前缀由 DOM 承担）。 */
+/** 23 → '23G'（"可用"前缀由 DOM 承担）。 */
 function formatFreeLabel(gb) {
   if (!Number.isFinite(gb)) return '--G';
   return Math.max(0, Math.round(gb)) + 'G';
@@ -438,6 +450,35 @@ function formatFreeLabel(gb) {
 function formatTar(v) {
   if (!Number.isFinite(v)) return '--';
   return Math.max(0, v).toFixed(2);
+}
+
+/** 毫秒展示：未知显示 --。 */
+function ms(v) {
+  return Number.isFinite(v) ? Math.round(v) + 'ms' : '--';
+}
+
+/**
+ * 生成一段可直接粘贴到聊天/工单里的状态摘要（页脚"复制"按钮用）。
+ * 纯函数便于单测；两种视图各用各的字段，不混用，未知量显示 --。
+ */
+function formatSummary(s, view = 'server') {
+  const lines = [
+    'Tokmeter · ' + (s.clock || '--'),
+    s.model.name + '（' + s.model.engine + ' · ' + s.model.nodes + '）',
+    '状态 ' + s.status,
+  ];
+  if (view === 'client' && s.client) {
+    lines.push('输出 ' + formatRate(s.output.tokPerSec) + ' tok/s');
+    lines.push('TTFT P50 ' + ms(s.client.ttftP50) + ' / P95 ' + ms(s.client.ttftP95));
+    lines.push('探测 ' + s.client.probeCount + ' 次，失败 ' + s.client.failCount);
+    const cost = Number.isFinite(s.client.cost) ? s.client.cost.toFixed(2) : '--';
+    lines.push('用量 输入 ' + formatRate(s.client.tokensIn) + ' / 输出 ' + formatRate(s.client.tokensOut) + ' tok，成本 ' + cost);
+  } else {
+    lines.push('输出 ' + formatRate(s.output.tokPerSec) + ' tok/s，输入 ' + formatRate(s.input.tokPerSec) + ' tok/s');
+    lines.push('请求 ' + s.requests.active + ' 活动 / ' + s.requests.queued + ' 排队');
+    lines.push('KV ' + formatPercent(s.kvCache.usage) + '，GPU ' + formatPercent(s.gpu.utilization));
+  }
+  return lines.join('\n');
 }
 
 /* ===== src/charts.js ===== */
@@ -812,12 +853,14 @@ function createMockSource({ seed = 1, intervalMs = 1000, now = () => Date.now() 
   const rnd = mulberry32(seed);
   let timer = null;
   let snapshot = null;
+  let running = false;
   let status = 'connecting';
   return {
     get status() {
       return status;
     },
     start(onSample) {
+      running = true;
       snapshot = initialSnapshot(now());
       status = 'live';
       onSample(snapshot);
@@ -826,7 +869,14 @@ function createMockSource({ seed = 1, intervalMs = 1000, now = () => Date.now() 
         onSample(snapshot);
       }, intervalMs);
     },
+    /** 立即推进一步（页脚"刷新"按钮用）。 */
+    pollOnce() {
+      if (!running || !snapshot) return;
+      snapshot = stepSnapshot(snapshot, rnd, now());
+      onSample(snapshot);
+    },
     stop() {
+      running = false;
       if (timer !== null) {
         clearInterval(timer);
         timer = null;
@@ -1033,6 +1083,11 @@ function createHttpSource({ endpoint, intervalMs = HTTP_DEFAULT_INTERVAL, fetchI
     get status() {
       return status;
     },
+    /** 立即拉一次（页脚"刷新"按钮用）。 */
+    pollOnce() {
+      if (!running) return;
+      return httpAttempt(runId);
+    },
     start(onSampleFn) {
       if (running) return;
       running = true;
@@ -1210,6 +1265,11 @@ function createClientSource({ endpoint, intervalMs = 1000, fetchImpl = fetch, no
   return {
     get status() {
       return status;
+    },
+    /** 立即拉一次（页脚"刷新"按钮用）。 */
+    pollOnce() {
+      if (!running) return;
+      return attempt(runId);
     },
     start(fn) {
       if (running) return;
@@ -1423,9 +1483,9 @@ function renderShell(root, view = 'server') {
     '<footer class="ftr">',
     '  <div class="ftr-clock"><span class="ftr-icon">' + ICONS.clock + '</span><span id="clock">--:--:--</span></div>',
     '  <div class="ftr-actions">',
-    '    <span class="ftr-icon">' + ICONS.refresh + '</span>',
-    '    <span class="ftr-icon">' + ICONS.copy + '</span>',
-    '    <span class="ftr-icon">' + ICONS.power + '</span>',
+    '    <button type="button" class="ftr-icon" id="btn-refresh" title="立即刷新" aria-label="立即刷新">' + ICONS.refresh + '</button>',
+    '    <button type="button" class="ftr-icon" id="btn-copy" title="复制当前状态" aria-label="复制当前状态">' + ICONS.copy + '</button>',
+    '    <button type="button" class="ftr-icon" id="btn-power" title="暂停/恢复监测" aria-label="暂停/恢复监测">' + ICONS.power + '</button>',
     '  </div>',
     '</footer>',
   ].join('\n');
@@ -1692,6 +1752,13 @@ function collectProbe(root, s, stats) {
       },
     },
     dim: root.classList.contains('is-degraded'),
+    // 页脚三个按钮必须真的存在且可用（曾经只是装饰图标）
+    controls: {
+      refresh: !!root.querySelector('#btn-refresh'),
+      copy: !!root.querySelector('#btn-copy'),
+      power: !!root.querySelector('#btn-power'),
+      press: { ...((stats && stats.press) || {}) },   // 按键结果放在 press 里，别覆盖上面的存在性标记
+    },
     degrade: { staleLink: (stats && stats.staleLink) || null, staleDim: !!(stats && stats.staleDim) },
     island: (() => {
       const node = document.getElementById('island');
@@ -1762,6 +1829,69 @@ const view = params.get('view') === 'client' ? 'client' : 'server';
 
 const panel = document.getElementById('panel');
 
+/** 页脚三个按钮的真实行为：刷新 / 复制 / 暂停。 */
+let activeSource = null;
+let paused = false;
+
+function flash(btn) {
+  if (!btn) return;
+  btn.classList.add('is-flash');
+  setTimeout(() => btn.classList.remove('is-flash'), 900);
+}
+
+async function copySummary(btn) {
+  const text = formatSummary(store.get(), view);
+  stats.copied = text;
+  try {
+    if (!navigator.clipboard || !navigator.clipboard.writeText) throw new Error('no clipboard');
+    await navigator.clipboard.writeText(text);
+  } catch {
+    // file:// 或权限不足时的兜底：老式 execCommand
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;opacity:0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch { /* 忽略：仍然给出视觉反馈 */ }
+    ta.remove();
+  }
+  flash(btn);
+}
+
+function togglePause(btn) {
+  paused = !paused;
+  if (paused) {
+    if (activeSource && typeof activeSource.stop === 'function') activeSource.stop();
+  } else {
+    startSource();
+  }
+  if (btn) btn.classList.toggle('is-off', paused);
+  stats.paused = paused;
+}
+
+function wireControls() {
+  const refresh = document.getElementById('btn-refresh');
+  const copyBtn = document.getElementById('btn-copy');
+  const power = document.getElementById('btn-power');
+  if (refresh) refresh.addEventListener('click', () => {
+    if (activeSource && typeof activeSource.pollOnce === 'function') activeSource.pollOnce();
+    flash(refresh);
+  });
+  if (copyBtn) copyBtn.addEventListener('click', () => { copySummary(copyBtn); });
+  if (power) power.addEventListener('click', () => { togglePause(power); });
+}
+
+/** 按当前视图启动数据源（暂停后恢复也走这里）。 */
+function startSource() {
+  if (view === 'client') {
+    const endpoint = params.get('endpoint') || 'http://127.0.0.1:8787/snapshot';
+    activeSource = createClientSource({ endpoint, intervalMs: 1000, now: () => Date.now() });
+  } else {
+    activeSource = pickSource();
+  }
+  activeSource.start((s) => store.update(s));
+}
+
 /** 面板宽度决定 1u 的像素值，窗口尺寸变化时重算。 */
 function layout() {
   applyUnit(panel, panel.clientWidth);
@@ -1773,6 +1903,7 @@ addEventListener('orientationchange', layout);
 
 panel.dataset.view = view;
 renderShell(panel, view);
+wireControls();
 if (params.get('island') === '1') renderIsland();   // 可选：灵动岛胶囊，默认关闭
 
 /** 冻结时钟：把今天的时分秒固定下来，让探针输出可复现。 */
@@ -1782,6 +1913,22 @@ function frozenNow() {
   const d = new Date();
   d.setHours(h || 0, m || 0, sec || 0, 0);
   return d.getTime();
+}
+
+/** 按键回归：?test=1&press=power,copy 真的触发按钮事件，结果记进探针。两种视图都要跑。 */
+function applyPress() {
+  const press = (params.get('press') || '').split(',').map((v) => v.trim()).filter(Boolean);
+  if (press.length === 0) return;
+  stats.press = {};
+  for (const name of press) {
+    const btn = document.getElementById('btn-' + name);
+    if (!btn) continue;
+    btn.click();
+    if (name === 'power') stats.press.power = { paused: stats.paused === true, isOff: btn.classList.contains('is-off') };
+    if (name === 'copy') stats.press.copy = { text: stats.copied || null };
+    if (name === 'refresh') stats.press.refresh = { ok: true };
+  }
+  store.update({});   // 探针在绘制时序列化，按键结果要再画一帧才带得出去
 }
 
 const store = createStore(emptySnapshot(Date.now()));
@@ -1836,6 +1983,7 @@ function clientFixture(now, seedValue) {
 
 if (testMode && view === 'client') {
   store.update(mapClientPayload(clientFixture(frozenNow(), seed), emptySnapshot(Date.now())));
+  applyPress();
 } else if (testMode) {
   const rnd = mulberry32(seed);
   let s = initialSnapshot(frozenNow());
@@ -1870,12 +2018,9 @@ if (testMode && view === 'client') {
     // 数据源不可达时的降级帧：状态变 error，其余字段沿用最后一帧（曲线保留、布局不变）
     store.update({ ...s, status: 'error' });
   }
-} else if (view === 'client') {
-  // 客户端视图连本机采集器；key 只存在采集器的配置文件里，页面里没有
-  const endpoint = params.get('endpoint') || 'http://127.0.0.1:8787/snapshot';
-  createClientSource({ endpoint, intervalMs: 1000, now: () => Date.now() }).start((s) => store.update(s));
+  applyPress();
 } else {
-  pickSource().start((s) => store.update(s));
+  startSource();
 }
 
 /** 数据源选择：?source=http|vllm&endpoint=<url>，缺省用模拟引擎。 */

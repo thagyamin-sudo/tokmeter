@@ -10,7 +10,7 @@ import { createScheduler } from './scheduler.js';
 import { createHttpSource } from './sources/http.js';
 import { parsePrometheus, toSnapshot, extractModelName } from './sources/vllm-metrics.js';
 import { createClientSource, mapClientPayload } from './sources/client.js';
-import { formatClock } from './format.js';
+import { formatClock, formatSummary } from './format.js';
 
 const params = new URLSearchParams(location.search);
 const testMode = params.get('test') === '1';
@@ -25,6 +25,69 @@ const view = params.get('view') === 'client' ? 'client' : 'server';
 
 const panel = document.getElementById('panel');
 
+/** 页脚三个按钮的真实行为：刷新 / 复制 / 暂停。 */
+let activeSource = null;
+let paused = false;
+
+function flash(btn) {
+  if (!btn) return;
+  btn.classList.add('is-flash');
+  setTimeout(() => btn.classList.remove('is-flash'), 900);
+}
+
+async function copySummary(btn) {
+  const text = formatSummary(store.get(), view);
+  stats.copied = text;
+  try {
+    if (!navigator.clipboard || !navigator.clipboard.writeText) throw new Error('no clipboard');
+    await navigator.clipboard.writeText(text);
+  } catch {
+    // file:// 或权限不足时的兜底：老式 execCommand
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;opacity:0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch { /* 忽略：仍然给出视觉反馈 */ }
+    ta.remove();
+  }
+  flash(btn);
+}
+
+function togglePause(btn) {
+  paused = !paused;
+  if (paused) {
+    if (activeSource && typeof activeSource.stop === 'function') activeSource.stop();
+  } else {
+    startSource();
+  }
+  if (btn) btn.classList.toggle('is-off', paused);
+  stats.paused = paused;
+}
+
+function wireControls() {
+  const refresh = document.getElementById('btn-refresh');
+  const copyBtn = document.getElementById('btn-copy');
+  const power = document.getElementById('btn-power');
+  if (refresh) refresh.addEventListener('click', () => {
+    if (activeSource && typeof activeSource.pollOnce === 'function') activeSource.pollOnce();
+    flash(refresh);
+  });
+  if (copyBtn) copyBtn.addEventListener('click', () => { copySummary(copyBtn); });
+  if (power) power.addEventListener('click', () => { togglePause(power); });
+}
+
+/** 按当前视图启动数据源（暂停后恢复也走这里）。 */
+function startSource() {
+  if (view === 'client') {
+    const endpoint = params.get('endpoint') || 'http://127.0.0.1:8787/snapshot';
+    activeSource = createClientSource({ endpoint, intervalMs: 1000, now: () => Date.now() });
+  } else {
+    activeSource = pickSource();
+  }
+  activeSource.start((s) => store.update(s));
+}
+
 /** 面板宽度决定 1u 的像素值，窗口尺寸变化时重算。 */
 function layout() {
   applyUnit(panel, panel.clientWidth);
@@ -36,6 +99,7 @@ addEventListener('orientationchange', layout);
 
 panel.dataset.view = view;
 renderShell(panel, view);
+wireControls();
 if (params.get('island') === '1') renderIsland();   // 可选：灵动岛胶囊，默认关闭
 
 /** 冻结时钟：把今天的时分秒固定下来，让探针输出可复现。 */
@@ -45,6 +109,22 @@ function frozenNow() {
   const d = new Date();
   d.setHours(h || 0, m || 0, sec || 0, 0);
   return d.getTime();
+}
+
+/** 按键回归：?test=1&press=power,copy 真的触发按钮事件，结果记进探针。两种视图都要跑。 */
+function applyPress() {
+  const press = (params.get('press') || '').split(',').map((v) => v.trim()).filter(Boolean);
+  if (press.length === 0) return;
+  stats.press = {};
+  for (const name of press) {
+    const btn = document.getElementById('btn-' + name);
+    if (!btn) continue;
+    btn.click();
+    if (name === 'power') stats.press.power = { paused: stats.paused === true, isOff: btn.classList.contains('is-off') };
+    if (name === 'copy') stats.press.copy = { text: stats.copied || null };
+    if (name === 'refresh') stats.press.refresh = { ok: true };
+  }
+  store.update({});   // 探针在绘制时序列化，按键结果要再画一帧才带得出去
 }
 
 const store = createStore(emptySnapshot(Date.now()));
@@ -99,6 +179,7 @@ function clientFixture(now, seedValue) {
 
 if (testMode && view === 'client') {
   store.update(mapClientPayload(clientFixture(frozenNow(), seed), emptySnapshot(Date.now())));
+  applyPress();
 } else if (testMode) {
   const rnd = mulberry32(seed);
   let s = initialSnapshot(frozenNow());
@@ -133,12 +214,9 @@ if (testMode && view === 'client') {
     // 数据源不可达时的降级帧：状态变 error，其余字段沿用最后一帧（曲线保留、布局不变）
     store.update({ ...s, status: 'error' });
   }
-} else if (view === 'client') {
-  // 客户端视图连本机采集器；key 只存在采集器的配置文件里，页面里没有
-  const endpoint = params.get('endpoint') || 'http://127.0.0.1:8787/snapshot';
-  createClientSource({ endpoint, intervalMs: 1000, now: () => Date.now() }).start((s) => store.update(s));
+  applyPress();
 } else {
-  pickSource().start((s) => store.update(s));
+  startSource();
 }
 
 /** 数据源选择：?source=http|vllm&endpoint=<url>，缺省用模拟引擎。 */

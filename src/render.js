@@ -194,9 +194,9 @@ export function renderShell(root, view = 'server') {
     '<footer class="ftr">',
     '  <div class="ftr-clock"><span class="ftr-icon">' + ICONS.clock + '</span><span id="clock">--:--:--</span></div>',
     '  <div class="ftr-actions">',
-    '    <span class="ftr-icon">' + ICONS.refresh + '</span>',
-    '    <span class="ftr-icon">' + ICONS.copy + '</span>',
-    '    <span class="ftr-icon">' + ICONS.power + '</span>',
+    '    <button type="button" class="ftr-icon" id="btn-refresh" title="立即刷新" aria-label="立即刷新">' + ICONS.refresh + '</button>',
+    '    <button type="button" class="ftr-icon" id="btn-copy" title="复制当前状态" aria-label="复制当前状态">' + ICONS.copy + '</button>',
+    '    <button type="button" class="ftr-icon" id="btn-power" title="暂停/恢复监测" aria-label="暂停/恢复监测">' + ICONS.power + '</button>',
     '  </div>',
     '</footer>',
   ].join('\n');
@@ -463,6 +463,13 @@ export function collectProbe(root, s, stats) {
       },
     },
     dim: root.classList.contains('is-degraded'),
+    // 页脚三个按钮必须真的存在且可用（曾经只是装饰图标）
+    controls: {
+      refresh: !!root.querySelector('#btn-refresh'),
+      copy: !!root.querySelector('#btn-copy'),
+      power: !!root.querySelector('#btn-power'),
+      press: { ...((stats && stats.press) || {}) },   // 按键结果放在 press 里，别覆盖上面的存在性标记
+    },
     degrade: { staleLink: (stats && stats.staleLink) || null, staleDim: !!(stats && stats.staleDim) },
     island: (() => {
       const node = document.getElementById('island');

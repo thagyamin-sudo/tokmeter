@@ -111,12 +111,14 @@ export function createMockSource({ seed = 1, intervalMs = 1000, now = () => Date
   const rnd = mulberry32(seed);
   let timer = null;
   let snapshot = null;
+  let running = false;
   let status = 'connecting';
   return {
     get status() {
       return status;
     },
     start(onSample) {
+      running = true;
       snapshot = initialSnapshot(now());
       status = 'live';
       onSample(snapshot);
@@ -125,7 +127,14 @@ export function createMockSource({ seed = 1, intervalMs = 1000, now = () => Date
         onSample(snapshot);
       }, intervalMs);
     },
+    /** 立即推进一步（页脚"刷新"按钮用）。 */
+    pollOnce() {
+      if (!running || !snapshot) return;
+      snapshot = stepSnapshot(snapshot, rnd, now());
+      onSample(snapshot);
+    },
     stop() {
+      running = false;
       if (timer !== null) {
         clearInterval(timer);
         timer = null;
