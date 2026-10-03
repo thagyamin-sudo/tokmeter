@@ -51,6 +51,13 @@ test('测量：缺少 usage 时按 chunk 计数，注释行与坏 JSON 不影响
   assert.equal(r.ok, true);
 });
 
+test('测量：TTFT 从发起请求算起（含连接与排队），而不是从收到响应头算起', async () => {
+  const { clock, stream } = streamClock([chunk('x'), 'data: [DONE]'], 100);
+  const requestStartedAt = 900;                // 时钟从 1000 起走，首个 chunk 在 1100 到达
+  const r = await measureOpenAiStream(stream, clock, requestStartedAt);
+  assert.equal(r.ttftMs, 200, 'TTFT = 首个 chunk 时刻(1100) - 请求发起时刻(900)');
+});
+
 test('测量：一个内容都没有（空流/纯错误流）时 tokPerSec 记为 0，不产生 Infinity', async () => {
   const { clock, stream } = streamClock(['data: [DONE]'], 10);
   const r = await measureOpenAiStream(stream, clock);

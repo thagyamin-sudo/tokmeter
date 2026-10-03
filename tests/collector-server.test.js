@@ -10,13 +10,15 @@ import { normalizeConfig } from '../collector/config.js';
 
 /** 假上游：按 OpenAI 的 SSE 格式吐 chunk；fail=true 时返回 500。 */
 async function startUpstream({ fail = false, chunks = ['你', '好', '呀'], includeUsage = true } = {}) {
-  const server = createServer((req, res) => {
+  const server = createServer(async (req, res) => {
     if (fail) {
       res.writeHead(500, { 'content-type': 'application/json' });
       return res.end('{"error":{"message":"boom"}}');
     }
     res.writeHead(200, { 'content-type': 'text/event-stream' });
     const sse = (obj) => res.write('data: ' + JSON.stringify(obj) + '\n\n');
+    // 首个 chunk 前留一点真实延迟：本地回环太快时 TTFT 会是 0ms，使"必须为正"变成偶发失败
+    await new Promise((r) => setTimeout(r, 5));
     for (const c of chunks) sse({ choices: [{ delta: { content: c } }] });
     if (includeUsage) sse({ choices: [{ delta: {} }], usage: { prompt_tokens: 11, completion_tokens: chunks.length } });
     res.write('data: [DONE]\n\n');

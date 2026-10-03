@@ -24,8 +24,10 @@ function parseSseLine(line) {
  * @param chunks 可迭代/可异步迭代的 SSE 行
  * @param now 取当前时间（毫秒），便于测试注入
  */
-export async function measureOpenAiStream(chunks, now = () => Date.now()) {
-  const started = now();
+export async function measureOpenAiStream(chunks, now = () => Date.now(), startedAt) {
+  // TTFT 必须从**发起请求**算起：响应头常与首个 chunk 一起 flush，
+  // 若从"收到响应头"开始计时，本地回环下会量出 0ms（真机上是错误的乐观值）。
+  const started = Number.isFinite(startedAt) ? startedAt : now();
   let ttftMs = null;
   let contentChunks = 0;
   let completionTokens = null;

@@ -62,7 +62,7 @@ export function createCollector({ config, fetchImpl = fetch, now = () => Date.no
         signal: AbortSignal.timeout ? AbortSignal.timeout(config.timeoutMs) : undefined,
       });
       if (!res.ok) throw new Error('上游 HTTP ' + res.status);
-      const measured = await measureOpenAiStream(bodyLines(res), now);
+      const measured = await measureOpenAiStream(bodyLines(res), now, started);
       stats.add({ t: started, ok: true, ...measured });
       status = 'live';
       lastError = null;
@@ -146,7 +146,7 @@ export function createCollector({ config, fetchImpl = fetch, now = () => Date.no
         }
         res.end();
         // 复用同一套测量逻辑：把已转发的文本重新按行喂进去
-        stats.add({ t: started, ok: true, ...(await measureOpenAiStream(passthrough.join('').split('\n'), now)) });
+        stats.add({ t: started, ok: true, ...(await measureOpenAiStream(passthrough.join('').split('\n'), now, started)) });
       } else {
         const text = await upstream.text();
         res.end(text);
