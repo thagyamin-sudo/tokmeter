@@ -128,6 +128,7 @@ function checkShell(p) {
   eq('Hero：折线点数', p.spark.points, 60);
   within('Hero 高 / 面板宽', p.hero.ratio, 0.255, 0.281);
   near('面板宽 = min(92vw,420)', p.panel.w, Math.min(0.92 * p.viewport.w, 420), 1.5);
+  eq('灵动岛：默认不出现', p.island.present, false);
 }
 
 /** 任务 7：六张数据卡。 */
@@ -181,6 +182,17 @@ function checkRealtime(p) {
   eq('渲染：更新计数', p.updateCount, 3);
 }
 
+/** 任务 9/12：数据源不可达时的降级渲染（布局不塌陷、曲线保留最后一帧）。 */
+function checkDegrade(p, live) {
+  eq('降级：连接状态文案', p.texts.link, '未连接');
+  eq('降级：状态字段', p.status, 'error');
+  near('降级：面板宽度不变', p.panel.w, live.panel.w, 0.01);
+  near('降级：面板高度不变', p.panel.h, live.panel.h, 0.01);
+  eq('降级：曲线保留最后一帧', p.spark.d, live.spark.d);
+  eq('灵动岛：?island=1 时渲染', p.island.present, true);
+  eq('灵动岛：显示 tok/s', p.island.rate, '257');
+}
+
 async function main() {
   let server = null;
   let base = '';
@@ -216,6 +228,15 @@ async function main() {
     add('实时模式探针', false, '第二次运行没有拿到探针输出');
   } else {
     checkRealtime(JSON.parse(m2[1]));
+  }
+
+  // 第三次运行：降级路径
+  const dom3 = await dumpDom(makeUrl('fail=1&island=1'));
+  const m3 = dom3.match(/PROBE_JSON:(\{[\s\S]*?\})<\/pre>/);
+  if (!m3) {
+    add('降级模式探针', false, '第三次运行没有拿到探针输出');
+  } else {
+    checkDegrade(JSON.parse(m3[1]), p);
   }
 
   const failed = checks.filter((c) => !c.ok);

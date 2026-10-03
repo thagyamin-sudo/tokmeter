@@ -1,0 +1,14 @@
+{
+  "name": "LLM 状态监控",
+  "short_name": "LLM 监控",
+  "description": "本地 vLLM 推理服务的实时状态面板",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#000000",
+  "theme_color": "#1c1c1e",
+  "start_url": "./index.html",
+  "icons": [
+    { "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

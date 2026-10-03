@@ -20,6 +20,7 @@ const ICONS = {
   sparkle: '<svg viewBox="0 0 16 16" width="100%" height="100%"><path d="M7 1.6 8.4 5.6 12.4 7 8.4 8.4 7 12.4 5.6 8.4 1.6 7 5.6 5.6z" fill="currentColor"/><path d="M12.6 9.4l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z" fill="currentColor"/></svg>',
   memory: '<svg viewBox="0 0 16 16" width="100%" height="100%"><rect x="1.8" y="4.2" width="12.4" height="7.6" rx="1.8" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M4.4 6.6h7.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>',
   gauge: '<svg viewBox="0 0 16 16" width="100%" height="100%"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 4.2v1.6M8 10.2v1.6M4.2 8h1.6M10.2 8h1.6M5.3 5.3l1.1 1.1M9.6 9.6l1.1 1.1M10.7 5.3 9.6 6.4M6.4 9.6 5.3 10.7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
+  cloud: '<svg viewBox="0 0 16 16" width="100%" height="100%"><path d="M4.6 12.4h6.9a2.6 2.6 0 0 0 .3-5.2 3.8 3.8 0 0 0-7.3-.9A2.9 2.9 0 0 0 4.6 12.4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>',
   doc: '<svg viewBox="0 0 16 16" width="100%" height="100%"><path d="M4 1.9h5l3 3v9.2H4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M6.2 8.2h3.6M6.2 10.6h3.6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
 };
 export { ICONS };
@@ -142,6 +143,18 @@ export function renderShell(root) {
   ].join('\n');
 }
 
+/** 可选：灵动岛样式的 tok/s 胶囊（?island=1），复刻参考照片顶部的实时活动。 */
+export function renderIsland() {
+  const node = document.createElement('div');
+  node.className = 'island';
+  node.id = 'island';
+  node.innerHTML =
+    '<span class="island-icon">' + ICONS.cloud + '</span>' +
+    '<span class="island-rate" id="island-rate">--</span>' +
+    '<span class="island-unit">tok/s</span>';
+  document.body.appendChild(node);
+}
+
 /** GPU 柱条：数量不变时只改属性，避免每帧重建 DOM。 */
 function drawBars(root, history) {
   const svg = root.querySelector('#gpu-bars');
@@ -200,6 +213,7 @@ export function paint(root, s) {
   setText(root, 'model-sub', s.model.engine + ' · ' + s.model.nodes);
   setText(root, 'link-text', s.status === 'error' ? '未连接' : 'NAS 已连接');
   setText(root, 'out-rate', formatRate(s.output.tokPerSec));
+  setText(document, 'island-rate', formatRate(s.output.tokPerSec));
   setText(root, 'clock', s.clock);
   const path = root.querySelector('#spark-path');
   if (path) path.setAttribute('d', sparklinePath(s.output.history, 41, 19, 2));
@@ -291,6 +305,11 @@ export function collectProbe(root, s, stats) {
         bars: (root.querySelector('#gpu-bars') || { childElementCount: 0 }).childElementCount,
       },
     },
+    island: (() => {
+      const node = document.getElementById('island');
+      const rate = document.getElementById('island-rate');
+      return { present: !!node, rate: rate ? rate.textContent.trim() : null };
+    })(),
     paintCount: (stats && stats.paints) || 0,
     updateCount: (stats && stats.updates) || 0,
     samples: {

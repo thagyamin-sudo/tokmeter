@@ -331,4 +331,25 @@ body {
   height: calc(var(--u) * 4.4);
 }
 
+/* 可选：灵动岛样式的胶囊（?island=1） */
+.island {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: #000;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.island-icon { display: block; width: 15px; height: 15px; color: var(--text-dim); }
+.island-unit { font-size: 12px; color: var(--text-dim); }
+
 #probe { color: var(--text-dim); font-size: 12px; }

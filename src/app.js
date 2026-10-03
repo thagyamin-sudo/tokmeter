@@ -5,7 +5,7 @@
 import { applyUnit } from './units.js';
 import { createStore, emptySnapshot } from './store.js';
 import { initialSnapshot, stepSnapshot, createMockSource, mulberry32 } from './sources/mock.js';
-import { renderShell, paint, collectProbe } from './render.js';
+import { renderShell, paint, collectProbe, renderIsland } from './render.js';
 import { createScheduler } from './scheduler.js';
 import { createHttpSource } from './sources/http.js';
 import { parsePrometheus, toSnapshot } from './sources/vllm-metrics.js';
@@ -31,6 +31,7 @@ addEventListener('resize', layout);
 addEventListener('orientationchange', layout);
 
 renderShell(panel);
+if (params.get('island') === '1') renderIsland();   // 可选：灵动岛胶囊，默认关闭
 
 /** 冻结时钟：把今天的时分秒固定下来，让探针输出可复现。 */
 function frozenNow() {
