@@ -1,0 +1,1555 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>LLM 状态监控</title>
+<style>
+/* 设计 token —— 取自参考截图量测，详见 spec 第 4.3 节 */
+:root {
+  --bg: #1c1c1e;
+  --card: #2c2c2e;
+  --track: #3a3a3c;
+  --hero-bg: #26382a;
+  --hero-border: rgba(255, 255, 255, 0.07);
+  --text: #ffffff;
+  --text-dim: #a1a1a6;
+  --green: #3ddc5f;
+  --lime: #b8e62e;
+  --blue: #3fa4f5;
+  --magenta: #c85ae0;
+  --orange: #f7a33c;
+  --page-bg: #000000;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--page-bg);
+}
+
+body {
+  min-height: 100vh;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 3vh 0;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC",
+    "Microsoft YaHei", system-ui, "Segoe UI", sans-serif;
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --u 由 src/app.js 写入（面板宽度的 1%），此处仅为 JS 生效前的兜底值。
+   面板内一切尺寸都写成 calc(var(--u) * N)，任何视口下比例都一致。 */
+.panel {
+  --u: 3.9px;
+  width: min(92vw, 420px);
+  background: var(--bg);
+  border-radius: calc(var(--u) * 4.4);
+  padding: calc(var(--u) * 3.4);
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 2.8);
+  overflow: hidden;
+}
+
+/* ---------- 标题栏 ---------- */
+.hdr {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 2.8);
+  height: calc(var(--u) * 10.4);
+}
+.hdr-icon {
+  flex: 0 0 auto;
+  width: calc(var(--u) * 9.4);
+  height: calc(var(--u) * 9.4);
+}
+.hdr-titles {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;         /* 模型名再长也只能省略，不能换行撑破固定高度的标题区 */
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 0.5);
+}
+.hdr-name {
+  font-size: calc(var(--u) * 4);
+  font-weight: 700;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hdr-sub {
+  font-size: calc(var(--u) * 2.9);
+  font-weight: 700;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hdr-link {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 1);
+  font-size: calc(var(--u) * 3.2);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.chev {
+  display: block;
+  width: calc(var(--u) * 3);
+  height: calc(var(--u) * 3);
+}
+
+/* ---------- Hero：实时输出 Token ---------- */
+.hero {
+  position: relative;
+  height: calc(var(--u) * 26.4);
+  border-radius: calc(var(--u) * 3.6);
+  background: var(--hero-bg);
+  border: calc(var(--u) * 0.25) solid var(--hero-border);
+  padding: calc(var(--u) * 3.2);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.hero-info {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 1.4);
+}
+.hero-label {
+  font-size: calc(var(--u) * 3);
+  font-weight: 700;
+}
+.hero-value {
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--u) * 1.6);
+  width: fit-content;   /* 收宽到内容：探针据此断言"数字+单位不侵入折线区" */
+}
+.hero-num {
+  font-size: calc(var(--u) * 11.5);
+  font-weight: 700;
+  line-height: 0.95;
+}
+.hero-unit {
+  font-size: calc(var(--u) * 3.3);
+  font-weight: 700;
+}
+.hero-foot {
+  font-size: calc(var(--u) * 2.8);
+  font-weight: 700;
+}
+.hero-chart {
+  position: absolute;
+  right: calc(var(--u) * 2.6);
+  top: calc(var(--u) * 4.8);
+  width: calc(var(--u) * 41);
+  height: calc(var(--u) * 19);
+}
+
+/* 数据过期/中断：把数据区压暗，让"数字还在但已经不准"一眼可见（页眉页脚保持明亮） */
+.panel.is-degraded .hero,
+.panel.is-degraded .card {
+  opacity: 0.55;
+}
+
+/* ---------- 卡片网格 ---------- */
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: calc(var(--u) * 2.6);
+}
+
+.card {
+  height: calc(var(--u) * 26.6);
+  background: var(--card);
+  border-radius: calc(var(--u) * 3.2);
+  padding: calc(var(--u) * 3);
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 2.2);
+  overflow: hidden;
+}
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 1.8);
+}
+.card-icon {
+  display: block;
+  width: calc(var(--u) * 3.6);
+  height: calc(var(--u) * 3.6);
+}
+.card-title {
+  font-size: calc(var(--u) * 3);
+  font-weight: 700;
+}
+.card-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+/* 请求状态 */
+.card-body.req {
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: calc(var(--u) * 2.6);
+}
+.req-line {
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--u) * 1.4);
+  font-size: calc(var(--u) * 3.4);
+  font-weight: 700;
+}
+.req-num {
+  font-size: calc(var(--u) * 4.6);
+  font-weight: 700;
+}
+.req-label { margin-right: calc(var(--u) * 1.6); }
+.bar {
+  display: flex;
+  width: 100%;
+  height: calc(var(--u) * 2.1);
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--track);
+}
+.bar-run { height: 100%; background: var(--green); }
+.bar-queue { height: 100%; background: var(--orange); border-radius: 999px; }
+
+/* 输入 Token */
+.card-body.input-body {
+  flex-direction: column;
+  justify-content: space-between;
+}
+.value-line {
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--u) * 1.2);
+}
+.value-big {
+  font-size: calc(var(--u) * 6.4);
+  font-weight: 700;
+  line-height: 1.05;
+}
+.value-unit {
+  font-size: calc(var(--u) * 3);
+  font-weight: 700;
+}
+.foot-line {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 1.6);
+  font-size: calc(var(--u) * 3);
+  font-weight: 700;
+}
+.foot-icon {
+  display: block;
+  width: calc(var(--u) * 3.4);
+  height: calc(var(--u) * 3.4);
+}
+
+/* 环形卡（KV Cache / MTP / 统一内存） */
+.card-body.ring-body {
+  flex-direction: row;
+  align-items: center;
+  gap: calc(var(--u) * 2.8);
+}
+.ring-wrap {
+  position: relative;
+  flex: 0 0 auto;
+  width: calc(var(--u) * 19.4);
+  height: calc(var(--u) * 19.4);
+}
+.ring {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.ring-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--u) * 3.6);
+  font-weight: 700;
+}
+#kv-arc { stroke: var(--blue); }
+#mtp-arc { stroke: var(--magenta); }
+#mem-arc { stroke: var(--green); }
+.ring-side {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 1);
+  font-size: calc(var(--u) * 2.7);
+  font-weight: 700;
+  white-space: nowrap; /* "Cache Hit 93%" 必须单行，否则卡片会被撑高、比例失真 */
+  flex: 1 1 auto;
+  min-width: 0;        /* 文案过长时在内容盒内省略，不许顶进卡片内边距 */
+}
+.ring-side > div {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ring-side .green { color: var(--green); }
+.ring-side .value-mid { font-size: calc(var(--u) * 4.4); }
+
+/* GPU 活跃度 */
+.card-body.gpu-body {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--u) * 2.4);
+}
+.gpu-value {
+  font-size: calc(var(--u) * 8);
+  font-weight: 700;
+  line-height: 1;
+  color: var(--lime);
+}
+.gpu-state {
+  margin-top: calc(var(--u) * 1.4);
+  font-size: calc(var(--u) * 2.8);
+  font-weight: 700;
+  color: var(--lime);
+}
+.gpu-bars {
+  display: block;
+  flex: 0 0 auto;
+  width: calc(var(--u) * 21);
+  height: calc(var(--u) * 15);
+}
+
+/* ---------- 底部栏 ---------- */
+.ftr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: calc(var(--u) * 8.4);
+}
+.ftr-clock {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 1.8);
+  font-size: calc(var(--u) * 3.2);
+  font-weight: 700;
+}
+.ftr-actions {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 3.4);
+}
+.ftr-icon {
+  display: block;
+  width: calc(var(--u) * 4.4);
+  height: calc(var(--u) * 4.4);
+}
+
+/* 可选：灵动岛样式的胶囊（?island=1） */
+.island {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: #000;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.island-icon { display: block; width: 15px; height: 15px; color: var(--text-dim); }
+.island-unit { font-size: 12px; color: var(--text-dim); }
+
+#probe { color: var(--text-dim); font-size: 12px; }
+</style>
+</head>
+<body>
+<main class="panel" id="panel"></main>
+<pre id="probe" hidden></pre>
+<script>
+(function () {
+  'use strict';
+/* ===== src/format.js ===== */
+/**
+ * 数值格式化：面板上所有数字都经这里产出，保证越界/缺失值不会渲染成 NaN、Infinity。
+ * 约定：任何非有限数一律返回占位符，负数按 0 处理。
+ */
+
+/** 速率：257 → '257'，1700 → '1.7K'，2340000 → '2.3M'。 */
+function formatRate(v) {
+  if (!Number.isFinite(v)) return '--';
+  const n = Math.max(0, v);
+  if (n < 1000) return String(Math.round(n));
+  const k = n / 1000;
+  // 999950~999999 会被 toFixed(1) 抬成 "1000.0K"（7 字符，是格式化层唯一越界串）——进位到 M
+  if (k < 999.95) return k.toFixed(1) + 'K';
+  return (n / 1e6).toFixed(1) + 'M';
+}
+
+/** 本地时间 HH:MM:SS（24 小时制，补零）。 */
+function formatClock(d) {
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return '--:--:--';
+  const p = (n) => String(n).padStart(2, '0');
+  return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+}
+
+/** 0.16 → '16%'。 */
+function formatPercent(ratio) {
+  if (!Number.isFinite(ratio)) return '--';
+  // 夹取到 0~1：环弧本身就只能画 0~1，文字若显示 1600%/-50% 会与图形自相矛盾
+  // （最常见的接线错误是按 0~100 传比例，这里兜住）
+  return Math.round(Math.min(1, Math.max(0, ratio)) * 100) + '%';
+}
+
+/** 105, 128 → '105/128G'。 */
+function formatMemPair(used, total) {
+  if (!Number.isFinite(used) || !Number.isFinite(total)) return '--/--G';
+  return Math.max(0, Math.round(used)) + '/' + Math.max(0, Math.round(total)) + 'G';
+}
+
+/** 23 → '23G'（"可用" 前缀由 DOM 承担）。 */
+function formatFreeLabel(gb) {
+  if (!Number.isFinite(gb)) return '--G';
+  return Math.max(0, Math.round(gb)) + 'G';
+}
+
+/** 1.99 → '1.99'。 */
+function formatTar(v) {
+  if (!Number.isFinite(v)) return '--';
+  return Math.max(0, v).toFixed(2);
+}
+
+/* ===== src/charts.js ===== */
+/**
+ * SVG 图表几何：只做纯计算，不碰 DOM。
+ * 坐标系与 SVG 一致（y 向下），调用方负责把结果写进 path/circle/rect 属性。
+ */
+
+/** 保留两位小数并去掉多余的 0，避免 path 里出现 12.340000000000002。 */
+function num(n) {
+  return String(Math.round(n * 100) / 100);
+}
+
+/**
+ * 折线路径：点少于一帧（0 个）或含异常值时返回空串，调用方据此跳过绘制。
+ * Y 轴按当前窗口的 [min,max] 自适应，pad 为上下留白。
+ */
+function sparklinePath(values, w, h, pad = 0) {
+  if (!Array.isArray(values) || values.length === 0) return '';
+  // 单个坏点不该清空整条曲线：用相邻有效值顶上；全无效才返回空串（此时确实没东西可画）
+  const clean = [];
+  let last = null;
+  for (const v of values) clean.push(Number.isFinite(v) ? (last = v) : last);
+  if (clean.every((v) => v === null)) return '';
+  const firstValid = clean.find((v) => v !== null);
+  for (let i = 0; i < clean.length; i++) if (clean[i] === null) clean[i] = firstValid;
+  const n = clean.length;
+  const min = Math.min(...clean);
+  const max = Math.max(...clean);
+  const span = max - min;
+  // 全 0（服务空转）应贴底，而不是悬在垂直中线让人误以为"有一半吞吐"
+  const y = (v) => (span === 0 ? (max === 0 ? h - pad : h / 2) : h - pad - ((v - min) / span) * (h - 2 * pad));
+  if (n === 1) return 'M 0 ' + num(y(clean[0]));
+  const step = w / (n - 1);
+  return clean
+    .map((v, i) => (i === 0 ? 'M ' : 'L ') + num(i * step) + ' ' + num(y(v)))
+    .join(' ');
+}
+
+/**
+ * 环形进度：返回轨道/进度弧共用的半径、周长与 dasharray。
+ * 起点在 12 点方向由调用方的 transform 负责（rotate(-90)）。
+ * size 是含描边宽度的外框边长，供 viewBox 使用。
+ */
+function ringGeometry(ratio, radius, strokeWidth) {
+  const r = radius;
+  const circumference = 2 * Math.PI * r;
+  const safe = Number.isFinite(ratio) ? Math.min(1, Math.max(0, ratio)) : 0;
+  const dash = circumference * safe;
+  return {
+    r,
+    circumference,
+    // dasharray 用 <弧长> <整圈> 表示"画一段、空一整圈"，起点即弧的起点（12 点方向由 CSS rotate 保证）。
+    // dashoffset 必须保持 0：再叠加 (1-ratio) 的偏移会让可见弧长变成 (1-ratio)，是个画错但测试抓不到的坑。
+    dasharray: dash + ' ' + circumference,
+    dashoffset: 0,
+    size: 2 * r + strokeWidth,
+  };
+}
+
+/**
+ * 柱状图矩形：等宽、等间隙，最后一根贴右边界；值按 0~1 归一化高度。
+ */
+function barRects(values, box, gapRatio) {
+  const list = Array.isArray(values) ? values : [];
+  const n = list.length;
+  if (n === 0) return [];
+  const { x, y, w, h } = box;
+  const gap = (w * gapRatio) / n;
+  const barW = (w - (n - 1) * gap) / n;
+  const rx = barW / 2;
+  return list.map((v, i) => {
+    const safe = Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0;
+    const bh = safe * h;
+    return { x: x + i * (barW + gap), y: y + (h - bh), w: barW, h: bh, rx };
+  });
+}
+
+/* ===== src/units.js ===== */
+/**
+ * 等比缩放单位：面板内所有尺寸都以 --u（面板宽度的 1%）为基准，
+ * 这样面板在任何视口宽度下都保持与参考截图一致的比例。
+ */
+
+/** 返回面板宽度对应的 1u 像素值。 */
+function unitPx(panelWidth) {
+  if (!Number.isFinite(panelWidth) || panelWidth <= 0) return 0;
+  return panelWidth / 100;
+}
+
+/** 把 --u 写到元素上，返回写入的像素值。 */
+function applyUnit(el, width) {
+  const u = unitPx(width);
+  el.style.setProperty('--u', u + 'px');
+  return u;
+}
+
+/* ===== src/store.js ===== */
+/**
+ * 状态容器与 Snapshot 契约 —— 全项目共享的数据形状在这里定义一次。
+ * 数据源产出 Snapshot，store 持有，渲染层只读。
+ */
+
+/**
+ * 空白快照：字段齐全，但**所有未知的量一律是 NaN**（界面显示 --）。
+ * 这里绝不能填 0/128G/"空闲" 这类看着合理的假值：真实数据源缺指标时，
+ * 假 0 会渲染成"GPU 空闲、显存全空"，让使用者据此做出错误判断，比不显示更危险。
+ */
+function emptySnapshot(now) {
+  return {
+    model: { name: 'Qwen3.8-Flash', engine: 'vLLM', nodes: 'Dual DGX Spark', link: 'up' },
+    output: { tokPerSec: NaN, history: [] },
+    requests: { active: 0, queued: 0, capacity: 10 },
+    input: { tokPerSec: NaN, prefillAvgMs: NaN },
+    kvCache: { usage: NaN, hitRate: NaN, headroom: '--' },
+    mtp: { ratio: NaN, tar: NaN },
+    memory: { node: '--', usedGB: NaN, totalGB: NaN, freeGB: NaN },
+    gpu: { utilization: NaN, state: '--', history: [] },
+    clock: '00:00:00',
+    status: 'connecting',
+    updatedAt: Number.isFinite(now) ? now : 0,
+  };
+}
+
+/** 环形缓冲：追加一个值并保持窗口长度，超出时丢弃最旧值。 */
+function pushRing(arr, v, max) {
+  const next = Array.isArray(arr) ? arr.concat([v]) : [v];
+  return next.length > max ? next.slice(next.length - max) : next;
+}
+
+/** 极简状态容器：浅合并 + 订阅通知。 */
+function createStore(initial) {
+  let state = initial;
+  const subs = new Set();
+  return {
+    get() {
+      return state;
+    },
+    update(patch) {
+      const delta = typeof patch === 'function' ? patch(state) : patch;
+      state = { ...state, ...(delta || {}) };
+      for (const fn of [...subs]) fn(state);
+      return state;
+    },
+    subscribe(fn) {
+      subs.add(fn);
+      return () => subs.delete(fn);
+    },
+  };
+}
+
+/* ===== src/sources/vllm-metrics.js ===== */
+/**
+ * vLLM /metrics 解析与映射 —— 全部是纯函数：Prometheus 文本 → 指标字典 → Snapshot。
+ * 只覆盖 5 个核心指标（运行/排队请求、生成吞吐、KV 占用、前缀缓存命中率），
+ * 其余字段（model/input/mtp/memory/gpu）一律保留上一帧；任何畸形输入都不抛异常。
+ * 注意 vLLM 的 gpu_cache_usage_perc 与 gpu_prefix_cache_hit_rate 已经是 0~1，无需再除以 100。
+ */
+
+/** 生成吞吐曲线的窗口长度（与 mock 源保持一致，便于两种数据源无缝切换）。 */
+const VLLM_OUTPUT_WINDOW = 60;
+
+/** Prometheus 样本行：指标名 +（可选）{标签} + 至少一个空白 + 值（时间戳等尾列忽略）。 */
+const VLLM_LINE = /^([a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{[^}]*\})?\s+(.+)$/;
+
+/** 只接受有限数值：字符串、NaN、Infinity 一律当作缺失。 */
+function vllmPick(source, key, fallback) {
+  const v = source[key];
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+/** 严格数字解析：空串、非数字、Infinity 都返回 null（Number('') 是 0，必须挡掉）。 */
+function vllmToNumber(token) {
+  const n = Number(token);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** prev 缺字段时的兜底：用空白快照补齐，保证映射永远拿到完整的 Snapshot 形状。 */
+function vllmBase(prev, now) {
+  const fallback = emptySnapshot(now);
+  if (!prev || typeof prev !== 'object') return fallback;
+  const out = { ...fallback, ...prev };
+  for (const key of ['model', 'output', 'requests', 'input', 'kvCache', 'mtp', 'memory', 'gpu']) {
+    const group = prev[key];
+    out[key] = group && typeof group === 'object' && !Array.isArray(group)
+      ? { ...fallback[key], ...group }
+      : fallback[key];
+  }
+  return out;
+}
+
+/**
+ * 解析 Prometheus 文本为 { 指标名: 数值 }。
+ * 跳过 # HELP / # TYPE 等注释行；畸形行（半行、非数字、缺名字）静默丢弃；空串返回 {}。
+ */
+function parsePrometheus(text) {
+  const out = {};
+  if (typeof text !== 'string' || text === '') return out;
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trim();
+    if (line === '' || line.startsWith('#')) continue;
+    const m = VLLM_LINE.exec(line);
+    if (!m) continue;
+    const token = m[2].trim().split(/\s+/)[0];
+    const num = vllmToNumber(token);
+    if (num === null) continue;
+    out[m[1]] = num;
+  }
+  return out;
+}
+
+/** 指标字典 → Snapshot：核心指标覆盖，缺失或非有限值逐字段回退 prev，状态固定 live。 */
+/** 从 /metrics 文本的标签里取真实模型名（多模型时取第一个）；取不到返回 null。 */
+function extractModelName(text) {
+  if (typeof text !== 'string') return null;
+  const m = /(?:^|\s)model_name="((?:[^"\\]|\\.)*)"/.exec(text);
+  if (!m) return null;
+  const name = m[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\').trim();
+  return name === '' ? null : name;
+}
+
+function toSnapshot(metrics, prev, now) {
+  const ts = Number.isFinite(now) ? now : 0;
+  // 契约是"任何输入都不抛异常"：prev 本身畸形（例如带抛异常的 getter）时退回空快照。
+  let base;
+  try {
+    base = vllmBase(prev, ts);
+  } catch {
+    base = emptySnapshot(ts);
+  }
+  try {
+    const m = metrics && typeof metrics === 'object' && !Array.isArray(metrics) ? metrics : {};
+
+    const active = Math.round(vllmPick(m, 'vllm:num_requests_running', base.requests.active));
+    const queued = Math.round(vllmPick(m, 'vllm:num_requests_waiting', base.requests.queued));
+    const tokPerSec = vllmPick(m, 'vllm:avg_generation_throughput_toks_per_s', base.output.tokPerSec);
+    const usage = vllmPick(m, 'vllm:gpu_cache_usage_perc', base.kvCache.usage);
+    const hitRate = vllmPick(m, 'vllm:gpu_prefix_cache_hit_rate', base.kvCache.hitRate);
+
+    return {
+      ...base,
+      // 速率未知（NaN）时不往曲线里塞点：曲线上不该出现"未知"这种形状
+      output: {
+        tokPerSec,
+        history: Number.isFinite(tokPerSec)
+          ? pushRing(base.output.history, tokPerSec, VLLM_OUTPUT_WINDOW)
+          : (Array.isArray(base.output.history) ? base.output.history.slice() : []),
+      },
+      requests: { ...base.requests, active, queued },
+      // /metrics 里没有的量沿用 prev；prev 未知时本来就是 NaN（emptySnapshot 不再谎报 0），
+      // 因此界面显示 -- 而不是"GPU 空闲 / 显存全空"。
+      kvCache: { ...base.kvCache, usage, hitRate },
+      clock: formatClock(new Date(ts)),
+      status: 'live',
+      updatedAt: ts,
+    };
+  } catch {
+    // 畸形 metrics（含抛异常的 getter）：退回上一帧，绝不把异常抛给调用方
+    return { ...base, clock: formatClock(new Date(ts)), status: 'live', updatedAt: ts };
+  }
+}
+
+/* ===== src/sources/mock.js ===== */
+/**
+ * 模拟 vLLM 遥测引擎：可播种、确定性、值域受控。
+ * 首帧刻意对齐参考截图（257 tok/s / 8 活动 / 1 排队 / KV 16% / MTP 69% / 105-128G / GPU 93%），
+ * 这样面板一打开就是「有数据」的样子，也方便视觉比对。
+ */
+
+const OUTPUT_WINDOW = 60;
+const GPU_WINDOW = 15;
+
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const round1 = (v) => Math.round(v * 10) / 10;
+
+/** 标准 mulberry32：同种子给出同序列，供测试与可复现演示。 */
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** 参考截图那条曲线：前段平稳、后段抖动放大，末点落在 257。 */
+function seedOutputHistory() {
+  const rnd = mulberry32(20261003);
+  const out = [];
+  let v = 196;
+  for (let i = 0; i < OUTPUT_WINDOW - 1; i++) {
+    const burst = i > 36;
+    const amp = burst ? 70 : 11;
+    v = clamp(v + (rnd() - 0.5) * 2 * amp, burst ? 120 : 150, burst ? 470 : 245);
+    out.push(round1(v));
+  }
+  out.push(257);
+  return out;
+}
+
+function seedGpuHistory() {
+  const rnd = mulberry32(931);
+  const out = [];
+  for (let i = 0; i < GPU_WINDOW; i++) out.push(clamp(0.86 + (rnd() - 0.5) * 0.16, 0, 1));
+  return out;
+}
+
+/** 首帧快照：字段与参考截图一致，历史窗口预填满。 */
+function initialSnapshot(now) {
+  const s = emptySnapshot(now);
+  s.status = 'live';
+  s.output.history = seedOutputHistory();
+  s.output.tokPerSec = 257;
+  s.requests = { active: 8, queued: 1, capacity: 10 }; // 参考截图进度条 ≈ 80% 绿 + 10% 橙
+  s.input = { tokPerSec: 1700, prefillAvgMs: 320 };
+  s.kvCache = { usage: 0.16, hitRate: 0.93, headroom: '余量充足' };
+  s.mtp = { ratio: 0.69, tar: 1.99 };
+  s.memory = { node: 'S1', usedGB: 105, totalGB: 128, freeGB: 23 };
+  s.gpu = { utilization: 0.93, state: '计算中', history: seedGpuHistory() };
+  s.clock = formatClock(new Date(now));
+  s.updatedAt = now;
+  return s;
+}
+
+/** 推进一步：随机游走 + 均值回归，所有量都夹在物理值域内。 */
+function stepSnapshot(prev, rnd, now) {
+  const capacity = prev.requests.capacity;
+  const active = Math.round(clamp(prev.requests.active + (rnd() - 0.5) * 3.4, 0, capacity));
+  const queued = Math.round(clamp(prev.requests.queued + (rnd() - 0.5) * 2.2, 0, 6));
+
+  const target = active > 0 ? 170 + active * 22 : 0;
+  const tokPerSec = clamp(prev.output.tokPerSec + (target - prev.output.tokPerSec) * 0.25 + (rnd() - 0.5) * 80, 0, 1200);
+
+  const inputTarget = active * 190 + queued * 60;
+  const inputRate = clamp(prev.input.tokPerSec + (inputTarget - prev.input.tokPerSec) * 0.3 + (rnd() - 0.5) * 260, 0, 20000);
+
+  let usage = prev.kvCache.usage + 0.003 + (rnd() - 0.5) * 0.002;
+  if (usage > 0.95) usage = 0.12;                    // 写满即淘汰，形成锯齿
+  usage = clamp(usage, 0, 1);
+  const hitRate = clamp(prev.kvCache.hitRate + (rnd() - 0.5) * 0.02, 0.85, 0.97);
+
+  const ratio = clamp(prev.mtp.ratio + (rnd() - 0.5) * 0.05, 0.5, 0.85);
+  const tar = clamp(1 + ratio * 1.43, 1.3, 2.6);
+
+  const usedGB = clamp(prev.memory.usedGB + (rnd() - 0.5) * 0.6 + (usage - 0.5) * 0.4, 0, prev.memory.totalGB);
+
+  const utilization = clamp(0.05 + (active / capacity) * 0.9 + (rnd() - 0.5) * 0.1, 0, 1);
+
+  return {
+    ...prev,
+    output: { tokPerSec, history: pushRing(prev.output.history, round1(tokPerSec), OUTPUT_WINDOW) },
+    requests: { active, queued, capacity },
+    input: { tokPerSec: Math.round(inputRate), prefillAvgMs: Math.round(clamp(180 + (queued * 90) + (rnd() - 0.5) * 60, 60, 2000)) },
+    kvCache: { usage, hitRate, headroom: usage > 0.8 ? '余量紧张' : usage > 0.5 ? '余量一般' : '余量充足' },
+    mtp: { ratio, tar },
+    memory: { ...prev.memory, usedGB, freeGB: prev.memory.totalGB - usedGB },
+    gpu: {
+      utilization,
+      state: utilization > 0.2 ? '计算中' : '空闲',
+      history: pushRing(prev.gpu.history, utilization, GPU_WINDOW),
+    },
+    clock: formatClock(new Date(now)),
+    status: 'live',
+    updatedAt: now,
+  };
+}
+
+/** MetricsSource 实现：每秒推进一步。 */
+function createMockSource({ seed = 1, intervalMs = 1000, now = () => Date.now() } = {}) {
+  const rnd = mulberry32(seed);
+  let timer = null;
+  let snapshot = null;
+  let status = 'connecting';
+  return {
+    get status() {
+      return status;
+    },
+    start(onSample) {
+      snapshot = initialSnapshot(now());
+      status = 'live';
+      onSample(snapshot);
+      timer = setInterval(() => {
+        snapshot = stepSnapshot(snapshot, rnd, now());
+        onSample(snapshot);
+      }, intervalMs);
+    },
+    stop() {
+      if (timer !== null) {
+        clearInterval(timer);
+        timer = null;
+      }
+    },
+  };
+}
+
+/* ===== src/sources/http.js ===== */
+/**
+ * HTTP JSON 数据源：按固定间隔轮询真实端点，把返回的快照 JSON 合并进上一帧。
+ * 失败不抛异常：1~2 次失败仍标记 live（沿用上一帧数据），第 3 次起 stale，第 5 次起 error，
+ * 并按下一次延迟 = 间隔 × 2^失败次数（封顶 4 倍间隔）退避。
+ * 请求严格串行（上一次没回来就跳过本轮），stop() 之后不再发起任何请求、也不再上报。
+ */
+
+/** 快照里按「子对象」逐字段合并的键；其余顶层键走浅合并。 */
+const HTTP_GROUPS = ['model', 'output', 'requests', 'input', 'kvCache', 'mtp', 'memory', 'gpu'];
+/** 退避上限：最多放大到 4 倍间隔。 */
+const HTTP_MAX_BACKOFF = 4;
+/** 连续失败到第 3 次标记 stale。 */
+const HTTP_STALE_AT = 3;
+/** 连续失败到第 5 次标记 error。 */
+const HTTP_ERROR_AT = 5;
+const HTTP_DEFAULT_INTERVAL = 1000;
+/** 曲线窗口：与模拟源、vLLM 源保持一致，否则 ?source=http 永远画不出折线。 */
+const HTTP_OUTPUT_WINDOW = 60;
+const HTTP_GPU_WINDOW = 15;
+
+/** 结构化克隆（只处理普通对象/数组，深度上限防环）：保证返回值与入参、prev 都不共享引用。 */
+function httpDeepClone(value, depth = 0) {
+  if (Array.isArray(value)) return value.map((v) => httpDeepClone(v, depth + 1));
+  if (value && typeof value === 'object' && depth < 8) {
+    const out = {};
+    for (const [key, item] of Object.entries(value)) out[key] = httpDeepClone(item, depth + 1);
+    return out;
+  }
+  return value;
+}
+
+/**
+ * 曲线窗口由数据源维护：负载自带 history 就尊重负载，
+ * 否则用上一帧窗口追加当前值（否则只报 tokPerSec 的端点会让折线与柱条永远空白）。
+ */
+function httpRingWindow(mergedHistory, rawHistory, rawValue, window) {
+  if (Array.isArray(rawHistory)) return rawHistory.slice();          // 负载自带则尊重负载
+  const prev = Array.isArray(mergedHistory) ? mergedHistory.slice() : [];
+  // 只有负载真的提供了有限数值才追加：空负载/畸形负载不得往曲线里塞假点
+  if (typeof rawValue !== 'number' || !Number.isFinite(rawValue)) return prev;
+  return pushRing(prev, rawValue, window);
+}
+
+/** 只接受有限数值：字符串、NaN、Infinity 一律当作缺失。 */
+function httpPick(value, fallback) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+/** 合并一个已知子对象：数值必须有限，数组整体替换（浅拷贝，避免与负载共享引用），其余照搬。 */
+function httpMergeGroup(base, patch) {
+  const out = { ...(base && typeof base === 'object' && !Array.isArray(base) ? base : {}) };
+  if (patch && typeof patch === 'object' && !Array.isArray(patch)) {
+    for (const [key, value] of Object.entries(patch)) {
+      if (Array.isArray(value)) out[key] = value.slice();
+      else if (typeof value === 'number') { if (Number.isFinite(value)) out[key] = value; }
+      else if (value !== undefined && value !== null) out[key] = value;
+    }
+  }
+  for (const [key, value] of Object.entries(out)) if (Array.isArray(value)) out[key] = value.slice();
+  return out;
+}
+
+/** 响应是否 2xx：优先看 status，其次看 ok（兼容只给 ok 的极简 fake）。 */
+function httpResponseOk(res) {
+  if (!res || typeof res !== 'object') return false;
+  if (typeof res.status === 'number') return res.status >= 200 && res.status < 300;
+  return res.ok !== false;
+}
+
+/** 失败次数 → 下一次轮询延迟：间隔 × 2^n，封顶 4 倍间隔。 */
+function httpBackoff(intervalMs, failures) {
+  if (!(failures > 0)) return intervalMs;
+  return intervalMs * Math.min(2 ** failures, HTTP_MAX_BACKOFF);
+}
+
+/** 远端 JSON → Snapshot：已知子对象逐字段合并，缺失与非有限数值沿用 prev，状态固定 live。 */
+function mapPayload(json, prev) {
+  const base = prev && typeof prev === 'object' ? prev : emptySnapshot(0);
+  const out = { ...base };
+  if (json && typeof json === 'object' && !Array.isArray(json)) {
+    for (const [key, value] of Object.entries(json)) {
+      if (HTTP_GROUPS.includes(key)) { out[key] = httpMergeGroup(base[key], value); continue; }
+      if (key === 'status') continue;                                     // 状态永远由数据源掌握
+      if (key === 'updatedAt') { out.updatedAt = httpPick(value, base.updatedAt); continue; }
+      if (key === 'clock') { if (typeof value === 'string' && value !== '') out.clock = value; continue; }
+      out[key] = value;                                                   // 其余顶层键浅合并照搬
+    }
+  }
+  const raw = json && typeof json === 'object' && !Array.isArray(json) ? json : {};
+  const rawOutput = raw.output && typeof raw.output === 'object' && !Array.isArray(raw.output) ? raw.output : {};
+  const rawGpu = raw.gpu && typeof raw.gpu === 'object' && !Array.isArray(raw.gpu) ? raw.gpu : {};
+  out.output = { ...out.output, history: httpRingWindow(out.output.history, rawOutput.history, rawOutput.tokPerSec, HTTP_OUTPUT_WINDOW) };
+  out.gpu = { ...out.gpu, history: httpRingWindow(out.gpu.history, rawGpu.history, rawGpu.utilization, HTTP_GPU_WINDOW) };
+  out.status = 'live';
+  return httpDeepClone(out);       // 出口克隆：调用方拿到的快照与入参负载、prev 完全隔离
+}
+
+/** MetricsSource 实现：start 立刻拉一次，之后按 intervalMs 轮询并上报 Snapshot。 */
+function createHttpSource({ endpoint, intervalMs = HTTP_DEFAULT_INTERVAL, fetchImpl = fetch, now = () => Date.now(), transform = null } = {}) {
+  const period = typeof intervalMs === 'number' && Number.isFinite(intervalMs) && intervalMs >= 0 ? intervalMs : HTTP_DEFAULT_INTERVAL;
+  const doFetch = typeof fetchImpl === 'function' ? fetchImpl : fetch;
+  const clock = typeof now === 'function' ? now : () => Date.now();
+
+  let status = 'connecting';
+  let running = false;
+  let runId = 0;
+  let timer = null;
+  let inFlight = false;
+  let failures = 0;
+  let snapshot = null;
+  let onSample = null;
+
+  /** 仅在本次运行仍然有效时上报：stop() 之后到达的在途回包一律丢弃。 */
+  function httpEmit(next, myRun) {
+    if (!running || myRun !== runId) return;
+    snapshot = next;
+    if (!onSample) return;
+    // 消费端契约是同步 sink。它自身的异常（同步抛出，或返回 rejected Promise）
+    // 属于消费端问题，必须在这里就地隔离：否则会被传输层的 catch 误判成网络故障，
+    // 导致每次成功都多推一帧降级帧、并错误拉长退避。
+    try {
+      const ret = onSample(next);
+      if (ret && typeof ret.then === 'function') ret.then(undefined, () => {});
+    } catch {
+      /* 按契约忽略消费端异常；数据源只保证自己绝不冒未处理拒绝 */
+    }
+  }
+
+  /** 一次请求：成功则映射上报，失败则按失败次数降级上报；所有异常都在这层被吃掉。 */
+  async function httpAttempt(myRun) {
+    if (inFlight) return;                       // 上一次还没回来：跳过本轮，杜绝请求重叠
+    inFlight = true;
+    let mapped = null;
+    let failure = false;
+    try {
+      const res = await doFetch(endpoint, {
+        headers: { accept: typeof transform === 'function' ? 'text/plain' : 'application/json' },
+        cache: 'no-store',
+      });
+      if (!httpResponseOk(res)) throw new Error('HTTP ' + (res && res.status));
+      // 注意：这里绝不能再声明一次 mapped —— 内层声明会遮蔽外层，成功帧会变成 null 交给渲染层。
+      let payloadHasClock = false;
+      if (typeof transform === 'function') {
+        // vLLM 的 /metrics 是 Prometheus 文本，由调用方注入 transform 完成解析与映射
+        mapped = await transform(res, snapshot, clock());
+        if (!mapped || typeof mapped !== 'object' || Array.isArray(mapped)) throw new Error('transform 未返回快照对象');
+        payloadHasClock = typeof mapped.clock === 'string' && mapped.clock !== '';
+      } else {
+        const json = await res.json();
+        if (!json || typeof json !== 'object' || Array.isArray(json)) throw new Error('响应不是 JSON 对象');
+        mapped = mapPayload(json, snapshot);
+        payloadHasClock = typeof json.clock === 'string' && json.clock !== '';
+      }
+      const stamp = clock();
+      // 负载没带时钟就按本地时间补一个，保证面板时钟一直在走；updatedAt 一律用本地接收时刻
+      if (!payloadHasClock) mapped.clock = formatClock(new Date(stamp));
+      mapped.updatedAt = stamp;
+    } catch {
+      failure = true;
+    } finally {
+      inFlight = false;
+    }
+
+    // 所有状态改动都必须在"本次运行仍然有效"之后：stop()/重启后迟到的回包
+    // 既不得改写 status，也不得污染新一轮的失败计数（否则退避会被幽灵失败拉长）。
+    if (!running || myRun !== runId) return;
+    if (failure) {
+      failures += 1;
+      status = failures >= HTTP_ERROR_AT ? 'error' : failures >= HTTP_STALE_AT ? 'stale' : 'live';
+      const stamp = clock();
+      const base = snapshot || emptySnapshot(stamp);
+      // 时钟是"现在"，不是数据：降级帧必须刷新它，否则一断线表就停，使用者无法判断数据停了多久
+      httpEmit({ ...base, status, clock: formatClock(new Date(stamp)), updatedAt: stamp }, myRun);
+      return;
+    }
+    failures = 0;
+    status = 'live';
+    // 状态永远由数据源掌握：transform 注入方返回的快照里带的 status 不作数（与 mapPayload 语义一致）
+    if (mapped.status !== 'live') mapped.status = 'live';
+    httpEmit(mapped, myRun);
+  }
+
+  /** 轮询循环：跑一次、按退避排下一次；异常绝不外泄成 unhandled rejection。 */
+  async function httpLoop(myRun) {
+    try {
+      await httpAttempt(myRun);
+    } catch {
+      // httpAttempt 内部已兜底：这里再挡一层，保证循环不会因为消费者异常而断掉
+    }
+    if (!running || myRun !== runId) return;
+    timer = setTimeout(() => { httpLoop(myRun).catch(() => {}); }, httpBackoff(period, failures));
+  }
+
+  return {
+    get status() {
+      return status;
+    },
+    start(onSampleFn) {
+      if (running) return;
+      running = true;
+      runId += 1;
+      onSample = typeof onSampleFn === 'function' ? onSampleFn : null;
+      httpLoop(runId).catch(() => {});
+    },
+    stop() {
+      running = false;
+      runId += 1;                               // 作废在途回包
+      onSample = null;
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    },
+  };
+}
+
+/* ===== src/render.js ===== */
+/**
+ * 渲染层：只负责把 Snapshot 写进 DOM，不做任何业务计算。
+ * 尺寸单位统一为 u（= 面板宽度的 1%），SVG 的 viewBox 也直接用 u，
+ * 因此图形坐标与 CSS 尺寸一一对应，缩放时不会变形。
+ */
+
+/** SVG 图标（fill 用 currentColor，尺寸由 CSS 决定）。 */
+const ICONS = {
+  app: '<svg viewBox="0 0 32 32" width="100%" height="100%"><defs><linearGradient id="agi" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f4fd0"/><stop offset="1" stop-color="#4aa8f0"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#agi)"/><path d="M9 20c2.4 0 3.4-2.2 4.6-5.2C14.8 11.6 16 9 18.4 9c2 0 3.2 1.6 4.6 4.4" fill="none" stroke="#eaf3ff" stroke-width="2.4" stroke-linecap="round"/><circle cx="10.5" cy="22.5" r="2" fill="#eaf3ff"/></svg>',
+  chevron: '<svg viewBox="0 0 16 16" width="100%" height="100%"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  clock: '<svg viewBox="0 0 16 16" width="100%" height="100%"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 4.6V8l2.4 1.6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>',
+  refresh: '<svg viewBox="0 0 16 16" width="100%" height="100%"><path d="M13 8a5 5 0 1 1-1.7-3.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M13 2.6V5.2h-2.6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  copy: '<svg viewBox="0 0 16 16" width="100%" height="100%"><rect x="2.6" y="2.6" width="7.4" height="7.4" rx="2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M6.2 12.2a1.8 1.8 0 0 0 1.8 1.2h3a1.8 1.8 0 0 0 1.8-1.8v-3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>',
+  power: '<svg viewBox="0 0 16 16" width="100%" height="100%"><path d="M8 2.4v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M4.8 4.4a5 5 0 1 0 6.4 0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+  users: '<svg viewBox="0 0 16 16" width="100%" height="100%"><circle cx="5.6" cy="5.4" r="2.4" fill="currentColor"/><path d="M1.8 13.2c0-2.3 1.7-3.7 3.8-3.7s3.8 1.4 3.8 3.7z" fill="currentColor"/><circle cx="11.2" cy="6.2" r="1.9" fill="currentColor"/><path d="M10.2 12.8c0-1.7 1-2.9 2.4-2.9 1.3 0 2.2 1 2.2 2.9z" fill="currentColor"/></svg>',
+  download: '<svg viewBox="0 0 16 16" width="100%" height="100%"><circle cx="8" cy="8" r="7" fill="currentColor" opacity="0.55"/><path d="M8 4.4v5" stroke="#1c1c1e" stroke-width="1.5" stroke-linecap="round"/><path d="M5.8 7.4 8 9.6l2.2-2.2" fill="none" stroke="#1c1c1e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  chip: '<svg viewBox="0 0 16 16" width="100%" height="100%"><rect x="3" y="4.4" width="10" height="7.2" rx="1.8" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5.6 2.8v1.6M10.4 2.8v1.6M5.6 11.6v1.6M10.4 11.6v1.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>',
+  sparkle: '<svg viewBox="0 0 16 16" width="100%" height="100%"><path d="M7 1.6 8.4 5.6 12.4 7 8.4 8.4 7 12.4 5.6 8.4 1.6 7 5.6 5.6z" fill="currentColor"/><path d="M12.6 9.4l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z" fill="currentColor"/></svg>',
+  memory: '<svg viewBox="0 0 16 16" width="100%" height="100%"><rect x="1.8" y="4.2" width="12.4" height="7.6" rx="1.8" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M4.4 6.6h7.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>',
+  gauge: '<svg viewBox="0 0 16 16" width="100%" height="100%"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 4.2v1.6M8 10.2v1.6M4.2 8h1.6M10.2 8h1.6M5.3 5.3l1.1 1.1M9.6 9.6l1.1 1.1M10.7 5.3 9.6 6.4M6.4 9.6 5.3 10.7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
+  cloud: '<svg viewBox="0 0 16 16" width="100%" height="100%"><path d="M4.6 12.4h6.9a2.6 2.6 0 0 0 .3-5.2 3.8 3.8 0 0 0-7.3-.9A2.9 2.9 0 0 0 4.6 12.4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>',
+  doc: '<svg viewBox="0 0 16 16" width="100%" height="100%"><path d="M4 1.9h5l3 3v9.2H4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M6.2 8.2h3.6M6.2 10.6h3.6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
+};
+{ ICONS };
+
+const RING_R = 8.5;
+const RING_STROKE = 1.9;
+const BARS_W = 21;
+const BARS_H = 15;
+
+function setText(root, id, value) {
+  const node = root.querySelector('#' + id);
+  if (node) node.textContent = value;
+}
+
+function textOf(root, sel) {
+  const node = root.querySelector(sel);
+  return node ? node.textContent.trim() : null;
+}
+
+function setWidthPct(root, id, pct) {
+  const node = root.querySelector('#' + id);
+  if (node) node.style.width = Math.max(0, Math.min(100, pct)) + '%';
+}
+
+/** 更新一条环形进度弧：弧长只由 dasharray 表达，起点由 rotate(-90) 落在 12 点。 */
+function setArc(root, id, ratio) {
+  const node = root.querySelector('#' + id);
+  if (!node) return;
+  const g = ringGeometry(ratio, RING_R, RING_STROKE);
+  node.setAttribute('stroke-dasharray', g.dasharray);
+  node.setAttribute('stroke-dashoffset', String(g.dashoffset));
+}
+
+function ringCard(id, title, icon, arcId, valueId, sideHtml) {
+  return (
+    '<section class="card" id="' + id + '">' +
+    '<div class="card-head"><span class="card-icon">' + icon + '</span><span class="card-title">' + title + '</span></div>' +
+    '<div class="card-body ring-body">' +
+    '<div class="ring-wrap">' +
+    '<svg class="ring" viewBox="0 0 20 20">' +
+    '<circle cx="10" cy="10" r="' + RING_R + '" fill="none" stroke="var(--track)" stroke-width="' + RING_STROKE + '"/>' +
+    '<circle id="' + arcId + '" cx="10" cy="10" r="' + RING_R + '" fill="none" stroke-width="' + RING_STROKE +
+    '" stroke-linecap="round" transform="rotate(-90 10 10)" stroke-dasharray="0 53.4"/>' +
+    '</svg>' +
+    '<div class="ring-text" id="' + valueId + '">--</div>' +
+    '</div>' +
+    '<div class="ring-side">' + sideHtml + '</div>' +
+    '</div></section>'
+  );
+}
+
+/** 一次性建立静态结构（标题栏 / Hero / 卡片网格 / 底部栏）。 */
+function renderShell(root) {
+  root.innerHTML = [
+    '<header class="hdr">',
+    '  <div class="hdr-icon">' + ICONS.app + '</div>',
+    '  <div class="hdr-titles">',
+    '    <div class="hdr-name" id="model-name">--</div>',
+    '    <div class="hdr-sub" id="model-sub">--</div>',
+    '  </div>',
+    '  <div class="hdr-link"><span class="chev">' + ICONS.chevron + '</span>',
+    '    <span id="link-text">--</span><span class="chev">' + ICONS.chevron + '</span></div>',
+    '</header>',
+    '<section class="hero" id="hero">',
+    '  <div class="hero-info">',
+    '    <div class="hero-label">实时输出 Token</div>',
+    '    <div class="hero-value"><span class="hero-num" id="out-rate">--</span><span class="hero-unit">tok/s</span></div>',
+    '    <div class="hero-foot">最近 60 秒</div>',
+    '  </div>',
+    '  <svg class="hero-chart" id="spark" viewBox="0 0 41 19">',
+    '    <path id="spark-path" fill="none" stroke="var(--green)" stroke-width="0.95"',
+    '      stroke-linecap="round" stroke-linejoin="round" d=""></path>',
+    '  </svg>',
+    '</section>',
+    '<div class="grid" id="grid">',
+    '  <section class="card" id="card-req">',
+    '    <div class="card-head"><span class="card-icon">' + ICONS.users + '</span><span class="card-title">请求状态</span></div>',
+    '    <div class="card-body req">',
+    '      <div class="req-line"><span class="req-num" id="req-active" style="color:var(--green)">--</span>',
+    '        <span class="req-label">活动</span>',
+    '        <span class="req-num" id="req-queued" style="color:var(--orange)">--</span>',
+    '        <span class="req-label">排队</span></div>',
+    '      <div class="bar" id="req-bar"><span class="bar-run" id="bar-run"></span><span class="bar-queue" id="bar-queue"></span></div>',
+    '    </div>',
+    '  </section>',
+    '  <section class="card" id="card-input">',
+    '    <div class="card-head"><span class="card-icon">' + ICONS.download + '</span><span class="card-title">输入 Token</span></div>',
+    '    <div class="card-body input-body">',
+    '      <div class="value-line"><span class="value-big" id="input-rate">--</span><span class="value-unit">tok/s</span></div>',
+    '      <div class="foot-line"><span class="foot-icon">' + ICONS.doc + '</span><span id="input-foot">Prefill 均值</span></div>',
+    '    </div>',
+    '  </section>',
+    ringCard('card-kv', 'KV Cache', ICONS.chip, 'kv-arc', 'kv-value',
+      '<div id="kv-label">占用率</div>' +
+      '<div class="green" id="kv-headroom">--</div>' +
+      '<div id="kv-hit">--</div>'),
+    ringCard('card-mtp', 'MTP', ICONS.sparkle, 'mtp-arc', 'mtp-value',
+      '<div id="tar-label">TAR</div>' +
+      '<div class="value-mid" id="tar-value">--</div>'),
+    ringCard('card-mem', '统一内存', ICONS.memory, 'mem-arc', 'mem-value',
+      '<div id="mem-node">--</div>' +
+      '<div class="green" id="mem-pair">--</div>' +
+      '<div>可用 <span id="mem-free">--</span></div>'),
+    '  <section class="card" id="card-gpu">',
+    '    <div class="card-head"><span class="card-icon">' + ICONS.gauge + '</span><span class="card-title">GPU 活跃度</span></div>',
+    '    <div class="card-body gpu-body">',
+    '      <div class="gpu-left"><div class="gpu-value" id="gpu-value">--</div><div class="gpu-state" id="gpu-state">--</div></div>',
+    '      <svg class="gpu-bars" id="gpu-bars" viewBox="0 0 ' + BARS_W + ' ' + BARS_H + '"></svg>',
+    '    </div>',
+    '  </section>',
+    '</div>',
+    '<footer class="ftr">',
+    '  <div class="ftr-clock"><span class="ftr-icon">' + ICONS.clock + '</span><span id="clock">--:--:--</span></div>',
+    '  <div class="ftr-actions">',
+    '    <span class="ftr-icon">' + ICONS.refresh + '</span>',
+    '    <span class="ftr-icon">' + ICONS.copy + '</span>',
+    '    <span class="ftr-icon">' + ICONS.power + '</span>',
+    '  </div>',
+    '</footer>',
+  ].join('\n');
+}
+
+/** 可选：灵动岛样式的 tok/s 胶囊（?island=1），复刻参考照片顶部的实时活动。 */
+function renderIsland() {
+  const node = document.createElement('div');
+  node.className = 'island';
+  node.id = 'island';
+  node.innerHTML =
+    '<span class="island-icon">' + ICONS.cloud + '</span>' +
+    '<span class="island-rate" id="island-rate">--</span>' +
+    '<span class="island-unit">tok/s</span>';
+  document.body.appendChild(node);
+}
+
+/** GPU 柱条：数量不变时只改属性，避免每帧重建 DOM。 */
+function drawBars(root, history) {
+  const svg = root.querySelector('#gpu-bars');
+  if (!svg) return;
+  const rects = barRects(history, { x: 0, y: 0, w: BARS_W, h: BARS_H }, 0.12);
+  while (svg.childElementCount > rects.length) svg.lastElementChild.remove();
+  while (svg.childElementCount < rects.length) {
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('fill', 'var(--lime)');
+    svg.appendChild(rect);
+  }
+  rects.forEach((r, i) => {
+    const node = svg.children[i];
+    node.setAttribute('x', String(r.x));
+    node.setAttribute('y', String(r.y));
+    node.setAttribute('width', String(r.w));
+    node.setAttribute('height', String(r.h));
+    node.setAttribute('rx', String(r.rx));
+  });
+}
+
+/** 六张数据卡的每帧更新。 */
+function paintCards(root, s) {
+  const cap = Math.max(1, s.requests.capacity);
+  setText(root, 'req-active', String(s.requests.active));
+  setText(root, 'req-queued', String(s.requests.queued));
+  setWidthPct(root, 'bar-run', (s.requests.active / cap) * 100);
+  setWidthPct(root, 'bar-queue', (s.requests.queued / cap) * 100);
+
+  setText(root, 'input-rate', formatRate(s.input.tokPerSec));
+
+  setText(root, 'kv-value', formatPercent(s.kvCache.usage));
+  setText(root, 'kv-headroom', s.kvCache.headroom);
+  setText(root, 'kv-hit', 'Cache Hit ' + formatPercent(s.kvCache.hitRate));
+  setArc(root, 'kv-arc', s.kvCache.usage);
+
+  setText(root, 'mtp-value', formatPercent(s.mtp.ratio));
+  setText(root, 'tar-value', formatTar(s.mtp.tar));
+  setArc(root, 'mtp-arc', s.mtp.ratio);
+
+  const memRatio =
+    Number.isFinite(s.memory.usedGB) && Number.isFinite(s.memory.totalGB) && s.memory.totalGB > 0
+      ? s.memory.usedGB / s.memory.totalGB
+      : NaN;   // 未知显存 → 显示 --，绝不显示 0%
+  setText(root, 'mem-value', formatPercent(memRatio));
+  setText(root, 'mem-node', s.memory.node);
+  setText(root, 'mem-pair', formatMemPair(s.memory.usedGB, s.memory.totalGB));
+  setText(root, 'mem-free', formatFreeLabel(s.memory.freeGB));
+  setArc(root, 'mem-arc', memRatio);
+
+  setText(root, 'gpu-value', formatPercent(s.gpu.utilization));
+  setText(root, 'gpu-state', s.gpu.state);
+  drawBars(root, s.gpu.history);
+}
+
+/** 每帧更新：把快照写进 DOM。 */
+function paint(root, s) {
+  setText(root, 'model-name', s.model.name);
+  setText(root, 'model-sub', s.model.engine + ' · ' + s.model.nodes);
+  // 监控面板最危险的失效模式是"安静地显示过期数据"：stale 也必须看得见
+  const linkText = s.status === 'error' ? '未连接' : s.status === 'stale' ? '连接异常' : 'NAS 已连接';
+  setText(root, 'link-text', linkText);
+  root.classList.toggle('is-degraded', s.status === 'stale' || s.status === 'error');
+  setText(root, 'out-rate', formatRate(s.output.tokPerSec));
+  setText(document, 'island-rate', formatRate(s.output.tokPerSec));
+  setText(root, 'clock', s.clock);
+  const path = root.querySelector('#spark-path');
+  if (path) path.setAttribute('d', sparklinePath(s.output.history, 41, 19, 2));
+  paintCards(root, s);
+}
+
+const r2 = (v) => Math.round(v * 100) / 100;
+
+/** 弧比例：从 dasharray '<弧长> <周长>' 反推。 */
+function arcRatio(node) {
+  if (!node) return null;
+  const parts = String(node.getAttribute('stroke-dasharray') || '').trim().split(/[\s,]+/).map(Number);
+  if (parts.length < 2 || !Number.isFinite(parts[0]) || !Number.isFinite(parts[1]) || parts[1] === 0) return null;
+  return Math.round((parts[0] / parts[1]) * 10000) / 10000;
+}
+
+/** 采集探针数据：真实几何 + 关键文本，供无头浏览器断言。 */
+function collectProbe(root, s, stats) {
+  const pr = root.getBoundingClientRect();
+  const hero = root.querySelector('#hero').getBoundingClientRect();
+  const d = (root.querySelector('#spark-path') || { getAttribute: () => '' }).getAttribute('d') || '';
+  const read = (id) => {
+    const n = root.querySelector('#' + id);
+    return n ? n.textContent.trim() : null;
+  };
+  const box = (sel) => {
+    const n = root.querySelector(sel);
+    return n ? n.getBoundingClientRect().width : 0;
+  };
+  const cardEl = root.querySelector('#card-req');
+  return {
+    mode: 'test',
+    viewport: { w: innerWidth, h: innerHeight },
+    panel: { w: r2(pr.width), h: r2(pr.height) },
+    u: getComputedStyle(root).getPropertyValue('--u').trim(),
+    texts: {
+      title: read('model-name'),
+      engine: read('model-sub'),
+      link: read('link-text'),
+      heroLabel: textOf(root, '.hero-label'),
+      heroFoot: textOf(root, '.hero-foot'),
+      rate: read('out-rate'),
+      unit: textOf(root, '.hero-unit'),
+      clock: read('clock'),
+    },
+    hero: {
+      h: r2(hero.height),
+      ratio: Math.round((hero.height / pr.width) * 10000) / 10000,
+      numW: r2((root.querySelector('#out-rate') || { getBoundingClientRect: () => ({ width: 0 }) }).getBoundingClientRect().width),
+      valueRight: r2((root.querySelector('.hero-value') || { getBoundingClientRect: () => ({ right: 0 }) }).getBoundingClientRect().right),
+      chartLeft: r2((root.querySelector('#spark') || { getBoundingClientRect: () => ({ left: 0 }) }).getBoundingClientRect().left),
+    },
+    overflow: { doc: document.documentElement.scrollWidth, body: document.body.scrollWidth },
+    hdr: (() => {
+      const h = root.querySelector('.hdr').getBoundingClientRect();
+      return { h: r2(h.height), bottom: r2(h.bottom), heroTop: r2(hero.top) };
+    })(),
+    spark: { points: (d.match(/[ML]/g) || []).length, d },
+    cards: {
+      heightRatio: cardEl ? Math.round((cardEl.getBoundingClientRect().height / pr.width) * 10000) / 10000 : 0,
+      requests: {
+        title: textOf(root, '#card-req .card-title'),
+        active: read('req-active'),
+        queued: read('req-queued'),
+        run: r2(box('#bar-run')),
+        queue: r2(box('#bar-queue')),
+        total: r2(box('#req-bar')),
+      },
+      input: {
+        title: textOf(root, '#card-input .card-title'),
+        rate: read('input-rate'),
+        unit: textOf(root, '#card-input .value-unit'),
+        foot: read('input-foot'),
+      },
+      kv: {
+        title: textOf(root, '#card-kv .card-title'),
+        value: read('kv-value'),
+        headroom: read('kv-headroom'),
+        hit: read('kv-hit'),
+        ratio: arcRatio(root.querySelector('#kv-arc')),
+      },
+      mtp: {
+        title: textOf(root, '#card-mtp .card-title'),
+        value: read('mtp-value'),
+        tar: read('tar-value'),
+        ratio: arcRatio(root.querySelector('#mtp-arc')),
+      },
+      mem: {
+        title: textOf(root, '#card-mem .card-title'),
+        value: read('mem-value'),
+        node: read('mem-node'),
+        pair: read('mem-pair'),
+        free: read('mem-free'),
+        ratio: arcRatio(root.querySelector('#mem-arc')),
+      },
+      gpu: {
+        title: textOf(root, '#card-gpu .card-title'),
+        value: read('gpu-value'),
+        state: read('gpu-state'),
+        bars: (root.querySelector('#gpu-bars') || { childElementCount: 0 }).childElementCount,
+      },
+    },
+    dim: root.classList.contains('is-degraded'),
+    degrade: { staleLink: (stats && stats.staleLink) || null, staleDim: !!(stats && stats.staleDim) },
+    island: (() => {
+      const node = document.getElementById('island');
+      const rate = document.getElementById('island-rate');
+      return { present: !!node, rate: rate ? rate.textContent.trim() : null };
+    })(),
+    paintCount: (stats && stats.paints) || 0,
+    updateCount: (stats && stats.updates) || 0,
+    samples: {
+      count: (stats && stats.samples) || 0,
+      firstRate: stats ? stats.firstRate : null,
+      rate: s.output.tokPerSec,
+    },
+    status: s.status,
+  };
+}
+
+/* ===== src/scheduler.js ===== */
+/**
+ * 渲染节流：把"每来一帧数据就重绘"合并为"每个动画帧最多重绘一次"。
+ * 调度函数由调用方注入（浏览器传 requestAnimationFrame，测试传同步执行），
+ * 于是合并逻辑不依赖浏览器时序，可以用单测钉死。
+ */
+function createScheduler(render, schedule) {
+  let pending = null;
+  let queued = false;
+  let hasPending = false;
+
+  function flush() {
+    queued = false;
+    if (!hasPending) return;
+    const value = pending;
+    pending = null;
+    hasPending = false;
+    render(value);
+  }
+
+  return {
+    push(value) {
+      pending = value;
+      hasPending = true;
+      if (queued) return;
+      queued = true;
+      schedule(flush);
+    },
+    get hasPending() {
+      return hasPending;
+    },
+  };
+}
+
+/* ===== src/app.js ===== */
+/**
+ * 装配层：解析 URL 参数 → 选数据源 → 采样 → rAF 合并渲染。
+ * 确定性测试模式（?test=1）不依赖定时器：同步喂帧，或按 ?tick=N 步进 N 帧。
+ */
+
+const params = new URLSearchParams(location.search);
+const testMode = params.get('test') === '1';
+const seed = Number(params.get('seed') || 7);
+const freeze = params.get('freeze');
+const tickN = Math.max(0, Number(params.get('tick') || 0));
+// 测试模式默认同步出结果（探针靠 --dump-dom 抓取，不能依赖 rAF 时序）；
+// ?raf=1 时才走真实渲染路径，用于验证"同帧多次更新只画一次"。
+const useRaf = !testMode || params.get('raf') === '1';
+
+const panel = document.getElementById('panel');
+
+/** 面板宽度决定 1u 的像素值，窗口尺寸变化时重算。 */
+function layout() {
+  applyUnit(panel, panel.clientWidth);
+}
+
+layout();
+addEventListener('resize', layout);
+addEventListener('orientationchange', layout);
+
+renderShell(panel);
+if (params.get('island') === '1') renderIsland();   // 可选：灵动岛胶囊，默认关闭
+
+/** 冻结时钟：把今天的时分秒固定下来，让探针输出可复现。 */
+function frozenNow() {
+  if (!freeze) return Date.now();
+  const [h, m, sec] = freeze.split(':').map(Number);
+  const d = new Date();
+  d.setHours(h || 0, m || 0, sec || 0, 0);
+  return d.getTime();
+}
+
+const store = createStore(emptySnapshot(Date.now()));
+const stats = { updates: 0, paints: 0, samples: 0, firstRate: null };
+function writeProbe(s) {
+  const probe = document.getElementById('probe');
+  if (probe) probe.textContent = 'PROBE_JSON:' + JSON.stringify(collectProbe(panel, s, stats));
+}
+
+function renderFrame(s) {
+  paint(panel, s);
+  stats.paints += 1;
+  if (testMode) writeProbe(s);
+}
+
+// 生产走 requestAnimationFrame 合并；测试模式用同步调度，保证 --dump-dom 能拿到确定结果。
+const scheduler = createScheduler(renderFrame, useRaf ? (cb) => requestAnimationFrame(cb) : (cb) => cb());
+
+function onUpdate(s) {
+  stats.updates += 1;
+  scheduler.push(s);
+}
+
+store.subscribe(onUpdate);
+
+if (testMode) {
+  const rnd = mulberry32(seed);
+  let s = initialSnapshot(frozenNow());
+  stats.samples = 1;
+  stats.firstRate = s.output.tokPerSec;
+  store.update(s);
+  for (let i = 1; i < tickN; i++) {
+    s = stepSnapshot(s, rnd, frozenNow() + i * 1000);
+    stats.samples = i + 1;
+    store.update(s);
+  }
+  // 长文本回归：模型名过长时标题区必须省略而不是换行撑破
+  const nameOverride = params.get('name');
+  if (nameOverride) {
+    s = { ...s, model: { ...s.model, name: nameOverride } };
+    store.update(s);
+  }
+  // 量级回归：把速率注入成极端值（如 2340000），验证数字变宽不会挤坏 Hero 卡
+  const inject = params.get('inject') || '';
+  const injectRate = inject.startsWith('rate:') ? Number(inject.slice(5)) : NaN;
+  if (Number.isFinite(injectRate)) {
+    s = { ...s, output: { ...s.output, tokPerSec: injectRate } };
+    store.update(s);
+  }
+  const fail = params.get('fail');
+  if (fail === 'stale' || fail === 'both') {
+    store.update({ ...s, status: 'stale' });
+    stats.staleLink = (document.getElementById('link-text') || {}).textContent || null;
+    stats.staleDim = panel.classList.contains('is-degraded');
+  }
+  if (fail === '1' || fail === 'error' || fail === 'both') {
+    // 数据源不可达时的降级帧：状态变 error，其余字段沿用最后一帧（曲线保留、布局不变）
+    store.update({ ...s, status: 'error' });
+  }
+} else {
+  pickSource().start((s) => store.update(s));
+}
+
+/** 数据源选择：?source=http|vllm&endpoint=<url>，缺省用模拟引擎。 */
+function pickSource() {
+  const kind = params.get('source') || 'mock';
+  const endpoint = params.get('endpoint') || '';
+  if (kind === 'http' && endpoint) {
+    return createHttpSource({ endpoint, intervalMs: 1000, now: () => Date.now() });
+  }
+  if (kind === 'vllm' && endpoint) {
+    return createHttpSource({
+      endpoint,
+      intervalMs: 1000,
+      now: () => Date.now(),
+      transform: async (res, prev, now) => {
+        const text = await res.text();
+        const snap = toSnapshot(parsePrometheus(text), prev, now);
+        const name = extractModelName(text);
+        // 标题区只写真实信息：取不到模型名就显示占位，不沿用内置演示实例的名字
+        snap.model = { ...snap.model, name: name || '未知模型', nodes: '—' };
+        return snap;
+      },
+    });
+  }
+  return createMockSource({ seed, intervalMs: 1000, now: () => Date.now() });
+}
+})();
+</script>
+</body>
+</html>

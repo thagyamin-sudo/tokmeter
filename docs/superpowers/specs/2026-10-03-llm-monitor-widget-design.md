@@ -143,7 +143,7 @@ ref/*.png
 {
   model:   { name: "Qwen3.8-Flash", engine: "vLLM", nodes: "Dual DGX Spark", link: "up" | "down" },
   output:  { tokPerSec: 257, history: [/* 60 个 */] },
-  requests:{ active: 8, queued: 1, capacity: 12 },
+  requests:{ active: 8, queued: 1, capacity: 10 },
   input:   { tokPerSec: 1700, prefillAvgMs: 320 },
   kvCache: { usage: 0.16, hitRate: 0.93, headroom: "余量充足" },
   mtp:     { ratio: 0.69, tar: 1.99 },
