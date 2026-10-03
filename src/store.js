@@ -3,17 +3,21 @@
  * 数据源产出 Snapshot，store 持有，渲染层只读。
  */
 
-/** 空白快照：字段齐全、数值有限，供测试与首次渲染使用。 */
+/**
+ * 空白快照：字段齐全，但**所有未知的量一律是 NaN**（界面显示 --）。
+ * 这里绝不能填 0/128G/"空闲" 这类看着合理的假值：真实数据源缺指标时，
+ * 假 0 会渲染成"GPU 空闲、显存全空"，让使用者据此做出错误判断，比不显示更危险。
+ */
 export function emptySnapshot(now) {
   return {
     model: { name: 'Qwen3.8-Flash', engine: 'vLLM', nodes: 'Dual DGX Spark', link: 'up' },
-    output: { tokPerSec: 0, history: [] },
+    output: { tokPerSec: NaN, history: [] },
     requests: { active: 0, queued: 0, capacity: 10 },
-    input: { tokPerSec: 0, prefillAvgMs: 0 },
-    kvCache: { usage: 0, hitRate: 0, headroom: '余量充足' },
-    mtp: { ratio: 0, tar: 1 },
-    memory: { node: 'S1', usedGB: 0, totalGB: 128, freeGB: 128 },
-    gpu: { utilization: 0, state: '空闲', history: [] },
+    input: { tokPerSec: NaN, prefillAvgMs: NaN },
+    kvCache: { usage: NaN, hitRate: NaN, headroom: '--' },
+    mtp: { ratio: NaN, tar: NaN },
+    memory: { node: '--', usedGB: NaN, totalGB: NaN, freeGB: NaN },
+    gpu: { utilization: NaN, state: '--', history: [] },
     clock: '00:00:00',
     status: 'connecting',
     updatedAt: Number.isFinite(now) ? now : 0,

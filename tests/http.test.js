@@ -37,7 +37,7 @@ test('mapPayload：浅合并负载，缺失与非有限数值沿用 prev，状�
   assert.equal(next.requests.queued, 0);
   assert.equal(next.requests.capacity, 12, '负载缺失的字段沿用 prev');
   assert.equal(next.output.tokPerSec, 240);
-  assert.deepEqual(next.output.history, [1, 2, 3], '负载没给 history 就保留上一帧曲线');
+  assert.deepEqual(next.output.history, [1, 2, 3, 240], '负载没给 history 时，由数据源把当前速率追加进曲线窗口');
   assert.equal(next.kvCache.usage, 0.4);
   assert.equal(next.kvCache.headroom, '余量紧张');
   assert.equal(next.extraTopLevel, 42, '未知顶层字段照搬');

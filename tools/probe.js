@@ -195,6 +195,9 @@ function checkNarrow(p, width) {
   eq('窄屏：无横向溢出', p.overflow.doc <= p.viewport.w + 1, true);
   eq('窄屏：折线仍为 60 点', p.spark.points, 60);
   within('窄屏：卡片高 / 面板宽', p.cards.heightRatio, 0.25, 0.31);
+  // C5：真实模型名（如 meta-llama/Llama-3.3-70B-Instruct）换行会把标题区撑进 Hero 卡
+  eq('窄屏：长模型名不撑破标题区', p.hdr.bottom <= p.hdr.heroTop + 0.5, true);
+  within('窄屏：标题区高度不变', p.hdr.h / p.panel.w, 0, 0.115);
 }
 
 /** 任务 9/12：数据源不可达时的降级渲染（布局不塌陷、曲线保留最后一帧）。 */
@@ -204,6 +207,10 @@ function checkDegrade(p, live) {
   near('降级：面板宽度不变', p.panel.w, live.panel.w, 0.01);
   near('降级：面板高度不变', p.panel.h, live.panel.h, 0.01);
   eq('降级：曲线保留最后一帧', p.spark.d, live.spark.d);
+  // C3：stale 必须可见（只有 error 才提示 = 安静地显示过期数据）
+  eq('降级：stale 文案可见', p.degrade.staleLink, '连接异常');
+  eq('降级：stale 数据区压暗', p.degrade.staleDim, true);
+  eq('降级：error 数据区压暗', p.dim, true);
   eq('灵动岛：?island=1 时渲染', p.island.present, true);
   eq('灵动岛：显示 tok/s', p.island.rate, '257');
 }
@@ -251,8 +258,9 @@ async function main() {
   const narrowH = 700;
   let narrowSkipped = false;
   if (server) {
+    const longName = 'Qwen3.8-Flash-Extended-Reasoning-32B-Instruct-2026';
     const narrowUrl = 'http://127.0.0.1:' + server.address().port + '/tools/frame.html?w=' + narrowW +
-      '&h=' + narrowH + '&q=' + encodeURIComponent(query);
+      '&h=' + narrowH + '&q=' + encodeURIComponent(query + '&name=' + longName);
     const dom4 = await dumpDom(narrowUrl);
     const m4 = dom4.match(/PROBE_JSON:(\{[\s\S]*?\})<\/pre>/);
     if (!m4) {
@@ -264,7 +272,7 @@ async function main() {
     narrowSkipped = true;
   }
 
-  const dom3 = await dumpDom(makeUrl('fail=1&island=1'));
+  const dom3 = await dumpDom(makeUrl('fail=both&island=1'));
   const m3 = dom3.match(/PROBE_JSON:(\{[\s\S]*?\})<\/pre>/);
   if (!m3) {
     add('降级模式探针', false, '第三次运行没有拿到探针输出');

@@ -14,15 +14,22 @@ function num(n) {
  */
 export function sparklinePath(values, w, h, pad = 0) {
   if (!Array.isArray(values) || values.length === 0) return '';
-  if (values.some((v) => !Number.isFinite(v))) return '';
-  const n = values.length;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+  // 单个坏点不该清空整条曲线：用相邻有效值顶上；全无效才返回空串（此时确实没东西可画）
+  const clean = [];
+  let last = null;
+  for (const v of values) clean.push(Number.isFinite(v) ? (last = v) : last);
+  if (clean.every((v) => v === null)) return '';
+  const firstValid = clean.find((v) => v !== null);
+  for (let i = 0; i < clean.length; i++) if (clean[i] === null) clean[i] = firstValid;
+  const n = clean.length;
+  const min = Math.min(...clean);
+  const max = Math.max(...clean);
   const span = max - min;
-  const y = (v) => (span === 0 ? h / 2 : h - pad - ((v - min) / span) * (h - 2 * pad));
-  if (n === 1) return 'M 0 ' + num(y(values[0]));
+  // 全 0（服务空转）应贴底，而不是悬在垂直中线让人误以为"有一半吞吐"
+  const y = (v) => (span === 0 ? (max === 0 ? h - pad : h / 2) : h - pad - ((v - min) / span) * (h - 2 * pad));
+  if (n === 1) return 'M 0 ' + num(y(clean[0]));
   const step = w / (n - 1);
-  return values
+  return clean
     .map((v, i) => (i === 0 ? 'M ' : 'L ') + num(i * step) + ' ' + num(y(v)))
     .join(' ');
 }

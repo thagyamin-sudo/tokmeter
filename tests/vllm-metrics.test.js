@@ -126,7 +126,7 @@ test('toSnapshot：缺失或非有限的指标逐字段回退到 prev', () => {
   const fresh = toSnapshot({}, null, NOW);
   assert.equal(fresh.status, 'live');
   assert.equal(fresh.requests.active, 0);
-  assert.deepEqual(fresh.output.history, [0], 'prev 缺失时用空白快照兜底');
+  assert.deepEqual(fresh.output.history, [], 'prev 缺失且速率未知：不往曲线塞假点（界面显示 --）');
 });
 
 test('toSnapshot：output.history 窗口为 60，且保留既有历史', () => {

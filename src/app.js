@@ -8,7 +8,7 @@ import { initialSnapshot, stepSnapshot, createMockSource, mulberry32 } from './s
 import { renderShell, paint, collectProbe, renderIsland } from './render.js';
 import { createScheduler } from './scheduler.js';
 import { createHttpSource } from './sources/http.js';
-import { parsePrometheus, toSnapshot } from './sources/vllm-metrics.js';
+import { parsePrometheus, toSnapshot, extractModelName } from './sources/vllm-metrics.js';
 
 const params = new URLSearchParams(location.search);
 const testMode = params.get('test') === '1';
@@ -76,6 +76,12 @@ if (testMode) {
     stats.samples = i + 1;
     store.update(s);
   }
+  // 长文本回归：模型名过长时标题区必须省略而不是换行撑破
+  const nameOverride = params.get('name');
+  if (nameOverride) {
+    s = { ...s, model: { ...s.model, name: nameOverride } };
+    store.update(s);
+  }
   // 量级回归：把速率注入成极端值（如 2340000），验证数字变宽不会挤坏 Hero 卡
   const inject = params.get('inject') || '';
   const injectRate = inject.startsWith('rate:') ? Number(inject.slice(5)) : NaN;
@@ -83,7 +89,13 @@ if (testMode) {
     s = { ...s, output: { ...s.output, tokPerSec: injectRate } };
     store.update(s);
   }
-  if (params.get('fail') === '1') {
+  const fail = params.get('fail');
+  if (fail === 'stale' || fail === 'both') {
+    store.update({ ...s, status: 'stale' });
+    stats.staleLink = (document.getElementById('link-text') || {}).textContent || null;
+    stats.staleDim = panel.classList.contains('is-degraded');
+  }
+  if (fail === '1' || fail === 'error' || fail === 'both') {
     // 数据源不可达时的降级帧：状态变 error，其余字段沿用最后一帧（曲线保留、布局不变）
     store.update({ ...s, status: 'error' });
   }
@@ -103,7 +115,14 @@ function pickSource() {
       endpoint,
       intervalMs: 1000,
       now: () => Date.now(),
-      transform: async (res, prev, now) => toSnapshot(parsePrometheus(await res.text()), prev, now),
+      transform: async (res, prev, now) => {
+        const text = await res.text();
+        const snap = toSnapshot(parsePrometheus(text), prev, now);
+        const name = extractModelName(text);
+        // 标题区只写真实信息：取不到模型名就显示占位，不沿用内置演示实例的名字
+        snap.model = { ...snap.model, name: name || '未知模型', nodes: '—' };
+        return snap;
+      },
     });
   }
   return createMockSource({ seed, intervalMs: 1000, now: () => Date.now() });

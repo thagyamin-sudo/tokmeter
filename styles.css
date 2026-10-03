@@ -65,6 +65,7 @@ body {
 .hdr-titles {
   flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;         /* 模型名再长也只能省略，不能换行撑破固定高度的标题区 */
   display: flex;
   flex-direction: column;
   gap: calc(var(--u) * 0.5);
@@ -73,11 +74,17 @@ body {
   font-size: calc(var(--u) * 4);
   font-weight: 700;
   line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .hdr-sub {
   font-size: calc(var(--u) * 2.9);
   font-weight: 700;
   line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .hdr-link {
   flex: 0 0 auto;
@@ -140,6 +147,12 @@ body {
   top: calc(var(--u) * 4.8);
   width: calc(var(--u) * 41);
   height: calc(var(--u) * 19);
+}
+
+/* 数据过期/中断：把数据区压暗，让"数字还在但已经不准"一眼可见（页眉页脚保持明亮） */
+.panel.is-degraded .hero,
+.panel.is-degraded .card {
+  opacity: 0.55;
 }
 
 /* ---------- 卡片网格 ---------- */
@@ -277,6 +290,12 @@ body {
   font-size: calc(var(--u) * 2.7);
   font-weight: 700;
   white-space: nowrap; /* "Cache Hit 93%" 必须单行，否则卡片会被撑高、比例失真 */
+  flex: 1 1 auto;
+  min-width: 0;        /* 文案过长时在内容盒内省略，不许顶进卡片内边距 */
+}
+.ring-side > div {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .ring-side .green { color: var(--green); }
 .ring-side .value-mid { font-size: calc(var(--u) * 4.4); }

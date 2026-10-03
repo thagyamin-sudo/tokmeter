@@ -8,7 +8,9 @@ export function formatRate(v) {
   if (!Number.isFinite(v)) return '--';
   const n = Math.max(0, v);
   if (n < 1000) return String(Math.round(n));
-  if (n < 1e6) return (n / 1000).toFixed(1) + 'K';
+  const k = n / 1000;
+  // 999950~999999 会被 toFixed(1) 抬成 "1000.0K"（7 字符，是格式化层唯一越界串）——进位到 M
+  if (k < 999.95) return k.toFixed(1) + 'K';
   return (n / 1e6).toFixed(1) + 'M';
 }
 
@@ -22,23 +24,25 @@ export function formatClock(d) {
 /** 0.16 → '16%'。 */
 export function formatPercent(ratio) {
   if (!Number.isFinite(ratio)) return '--';
-  return Math.round(ratio * 100) + '%';
+  // 夹取到 0~1：环弧本身就只能画 0~1，文字若显示 1600%/-50% 会与图形自相矛盾
+  // （最常见的接线错误是按 0~100 传比例，这里兜住）
+  return Math.round(Math.min(1, Math.max(0, ratio)) * 100) + '%';
 }
 
 /** 105, 128 → '105/128G'。 */
 export function formatMemPair(used, total) {
   if (!Number.isFinite(used) || !Number.isFinite(total)) return '--/--G';
-  return Math.round(used) + '/' + Math.round(total) + 'G';
+  return Math.max(0, Math.round(used)) + '/' + Math.max(0, Math.round(total)) + 'G';
 }
 
 /** 23 → '23G'（"可用" 前缀由 DOM 承担）。 */
 export function formatFreeLabel(gb) {
   if (!Number.isFinite(gb)) return '--G';
-  return Math.round(gb) + 'G';
+  return Math.max(0, Math.round(gb)) + 'G';
 }
 
 /** 1.99 → '1.99'。 */
 export function formatTar(v) {
   if (!Number.isFinite(v)) return '--';
-  return v.toFixed(2);
+  return Math.max(0, v).toFixed(2);
 }

@@ -195,7 +195,10 @@ export function paintCards(root, s) {
   setText(root, 'tar-value', formatTar(s.mtp.tar));
   setArc(root, 'mtp-arc', s.mtp.ratio);
 
-  const memRatio = s.memory.totalGB > 0 ? s.memory.usedGB / s.memory.totalGB : 0;
+  const memRatio =
+    Number.isFinite(s.memory.usedGB) && Number.isFinite(s.memory.totalGB) && s.memory.totalGB > 0
+      ? s.memory.usedGB / s.memory.totalGB
+      : NaN;   // 未知显存 → 显示 --，绝不显示 0%
   setText(root, 'mem-value', formatPercent(memRatio));
   setText(root, 'mem-node', s.memory.node);
   setText(root, 'mem-pair', formatMemPair(s.memory.usedGB, s.memory.totalGB));
@@ -211,7 +214,10 @@ export function paintCards(root, s) {
 export function paint(root, s) {
   setText(root, 'model-name', s.model.name);
   setText(root, 'model-sub', s.model.engine + ' · ' + s.model.nodes);
-  setText(root, 'link-text', s.status === 'error' ? '未连接' : 'NAS 已连接');
+  // 监控面板最危险的失效模式是"安静地显示过期数据"：stale 也必须看得见
+  const linkText = s.status === 'error' ? '未连接' : s.status === 'stale' ? '连接异常' : 'NAS 已连接';
+  setText(root, 'link-text', linkText);
+  root.classList.toggle('is-degraded', s.status === 'stale' || s.status === 'error');
   setText(root, 'out-rate', formatRate(s.output.tokPerSec));
   setText(document, 'island-rate', formatRate(s.output.tokPerSec));
   setText(root, 'clock', s.clock);
@@ -267,6 +273,10 @@ export function collectProbe(root, s, stats) {
       chartLeft: r2((root.querySelector('#spark') || { getBoundingClientRect: () => ({ left: 0 }) }).getBoundingClientRect().left),
     },
     overflow: { doc: document.documentElement.scrollWidth, body: document.body.scrollWidth },
+    hdr: (() => {
+      const h = root.querySelector('.hdr').getBoundingClientRect();
+      return { h: r2(h.height), bottom: r2(h.bottom), heroTop: r2(hero.top) };
+    })(),
     spark: { points: (d.match(/[ML]/g) || []).length, d },
     cards: {
       heightRatio: cardEl ? Math.round((cardEl.getBoundingClientRect().height / pr.width) * 10000) / 10000 : 0,
@@ -312,6 +322,8 @@ export function collectProbe(root, s, stats) {
         bars: (root.querySelector('#gpu-bars') || { childElementCount: 0 }).childElementCount,
       },
     },
+    dim: root.classList.contains('is-degraded'),
+    degrade: { staleLink: (stats && stats.staleLink) || null, staleDim: !!(stats && stats.staleDim) },
     island: (() => {
       const node = document.getElementById('island');
       const rate = document.getElementById('island-rate');

@@ -4,7 +4,7 @@
  * 并按下一次延迟 = 间隔 × 2^失败次数（封顶 4 倍间隔）退避。
  * 请求严格串行（上一次没回来就跳过本轮），stop() 之后不再发起任何请求、也不再上报。
  */
-import { emptySnapshot } from '../store.js';
+import { emptySnapshot, pushRing } from '../store.js';
 import { formatClock } from '../format.js';
 
 /** 快照里按「子对象」逐字段合并的键；其余顶层键走浅合并。 */
@@ -16,6 +16,9 @@ const HTTP_STALE_AT = 3;
 /** 连续失败到第 5 次标记 error。 */
 const HTTP_ERROR_AT = 5;
 const HTTP_DEFAULT_INTERVAL = 1000;
+/** 曲线窗口：与模拟源、vLLM 源保持一致，否则 ?source=http 永远画不出折线。 */
+const HTTP_OUTPUT_WINDOW = 60;
+const HTTP_GPU_WINDOW = 15;
 
 /** 结构化克隆（只处理普通对象/数组，深度上限防环）：保证返回值与入参、prev 都不共享引用。 */
 function httpDeepClone(value, depth = 0) {
@@ -26,6 +29,18 @@ function httpDeepClone(value, depth = 0) {
     return out;
   }
   return value;
+}
+
+/**
+ * 曲线窗口由数据源维护：负载自带 history 就尊重负载，
+ * 否则用上一帧窗口追加当前值（否则只报 tokPerSec 的端点会让折线与柱条永远空白）。
+ */
+function httpRingWindow(mergedHistory, rawHistory, rawValue, window) {
+  if (Array.isArray(rawHistory)) return rawHistory.slice();          // 负载自带则尊重负载
+  const prev = Array.isArray(mergedHistory) ? mergedHistory.slice() : [];
+  // 只有负载真的提供了有限数值才追加：空负载/畸形负载不得往曲线里塞假点
+  if (typeof rawValue !== 'number' || !Number.isFinite(rawValue)) return prev;
+  return pushRing(prev, rawValue, window);
 }
 
 /** 只接受有限数值：字符串、NaN、Infinity 一律当作缺失。 */
@@ -73,6 +88,11 @@ export function mapPayload(json, prev) {
       out[key] = value;                                                   // 其余顶层键浅合并照搬
     }
   }
+  const raw = json && typeof json === 'object' && !Array.isArray(json) ? json : {};
+  const rawOutput = raw.output && typeof raw.output === 'object' && !Array.isArray(raw.output) ? raw.output : {};
+  const rawGpu = raw.gpu && typeof raw.gpu === 'object' && !Array.isArray(raw.gpu) ? raw.gpu : {};
+  out.output = { ...out.output, history: httpRingWindow(out.output.history, rawOutput.history, rawOutput.tokPerSec, HTTP_OUTPUT_WINDOW) };
+  out.gpu = { ...out.gpu, history: httpRingWindow(out.gpu.history, rawGpu.history, rawGpu.utilization, HTTP_GPU_WINDOW) };
   out.status = 'live';
   return httpDeepClone(out);       // 出口克隆：调用方拿到的快照与入参负载、prev 完全隔离
 }
@@ -149,8 +169,10 @@ export function createHttpSource({ endpoint, intervalMs = HTTP_DEFAULT_INTERVAL,
     if (failure) {
       failures += 1;
       status = failures >= HTTP_ERROR_AT ? 'error' : failures >= HTTP_STALE_AT ? 'stale' : 'live';
-      const base = snapshot || emptySnapshot(clock());
-      httpEmit({ ...base, status }, myRun);     // 降级帧也要上报，界面才能进入降级显示
+      const stamp = clock();
+      const base = snapshot || emptySnapshot(stamp);
+      // 时钟是"现在"，不是数据：降级帧必须刷新它，否则一断线表就停，使用者无法判断数据停了多久
+      httpEmit({ ...base, status, clock: formatClock(new Date(stamp)), updatedAt: stamp }, myRun);
       return;
     }
     failures = 0;

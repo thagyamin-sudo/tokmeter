@@ -8,7 +8,9 @@ test('sparklinePath 边界', () => {
   assert.equal(sparklinePath([0, 10], 100, 50, 0), 'M 0 50 L 100 0'); // 满量程铺满
   assert.match(sparklinePath([1, 2, 3], 100, 50, 4), /^M .+ L .+ L .+$/);
   assert.equal(sparklinePath([7, 7, 7], 100, 50, 0), 'M 0 25 L 50 25 L 100 25'); // 等值居中
-  assert.equal(sparklinePath([NaN, 1], 100, 50, 0), '');             // 异常值不产出 path
+  // 坏点用相邻有效值顶上；只有整条都无效才不画（见 tests/regressions.test.js 的 M3 用例）
+  assert.equal(sparklinePath([NaN, 1], 100, 50, 0), 'M 0 25 L 100 25');
+  assert.equal(sparklinePath([NaN, null], 100, 50, 0), '');
 });
 
 test('ringGeometry 比例到 dasharray', () => {

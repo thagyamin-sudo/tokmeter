@@ -60,6 +60,15 @@ export function parsePrometheus(text) {
 }
 
 /** 指标字典 → Snapshot：核心指标覆盖，缺失或非有限值逐字段回退 prev，状态固定 live。 */
+/** 从 /metrics 文本的标签里取真实模型名（多模型时取第一个）；取不到返回 null。 */
+export function extractModelName(text) {
+  if (typeof text !== 'string') return null;
+  const m = /(?:^|\s)model_name="((?:[^"\\]|\\.)*)"/.exec(text);
+  if (!m) return null;
+  const name = m[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\').trim();
+  return name === '' ? null : name;
+}
+
 export function toSnapshot(metrics, prev, now) {
   const ts = Number.isFinite(now) ? now : 0;
   // 契约是"任何输入都不抛异常"：prev 本身畸形（例如带抛异常的 getter）时退回空快照。
@@ -80,8 +89,16 @@ export function toSnapshot(metrics, prev, now) {
 
     return {
       ...base,
-      output: { tokPerSec, history: pushRing(base.output.history, tokPerSec, VLLM_OUTPUT_WINDOW) },
+      // 速率未知（NaN）时不往曲线里塞点：曲线上不该出现"未知"这种形状
+      output: {
+        tokPerSec,
+        history: Number.isFinite(tokPerSec)
+          ? pushRing(base.output.history, tokPerSec, VLLM_OUTPUT_WINDOW)
+          : (Array.isArray(base.output.history) ? base.output.history.slice() : []),
+      },
       requests: { ...base.requests, active, queued },
+      // /metrics 里没有的量沿用 prev；prev 未知时本来就是 NaN（emptySnapshot 不再谎报 0），
+      // 因此界面显示 -- 而不是"GPU 空闲 / 显存全空"。
       kvCache: { ...base.kvCache, usage, hitRate },
       clock: formatClock(new Date(ts)),
       status: 'live',

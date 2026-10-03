@@ -156,8 +156,12 @@ test('S1 toSnapshot：prev 为 null/undefined/空对象/非对象时形状完整
       assert.ok(s[k] && typeof s[k] === 'object' && !Array.isArray(s[k]), label + ' 分组 ' + k);
     }
     assert.ok(Number.isFinite(s.requests.active) && Number.isFinite(s.requests.queued), label);
-    assert.ok(Number.isFinite(s.kvCache.usage) && Number.isFinite(s.kvCache.hitRate), label);
-    assert.ok(Number.isFinite(s.output.tokPerSec), label);
+    // 契约更新（评审 C2）：无从得知的量必须是 NaN（界面显示 --），不是假 0。
+    // 这里只要求它们是 number（NaN 合法），绝不能是 undefined / 字符串。
+    for (const v of [s.kvCache.usage, s.kvCache.hitRate, s.output.tokPerSec]) {
+      assert.equal(typeof v, 'number', label + ' 未知量必须是 number（NaN 表示未知）');
+      assert.equal(v, v, label + ' 不得是 NaN 以外的怪值');
+    }
   }
 });
 
@@ -211,7 +215,8 @@ test('S3 toSnapshot：history 满 60 再 push 丢最旧；prev 缺 output / hist
   const weird = { ...emptySnapshot(NOW), output: { tokPerSec: 7, history: 'nope' } };
   assert.deepEqual(toSnapshot({}, weird, NOW).output.history, [7], 'history 非数组时重建');
   const nullGroup = { ...emptySnapshot(NOW), output: null };
-  assert.deepEqual(toSnapshot({}, nullGroup, NOW).output.history, [0], 'output 为 null 时用空白快照兜底');
+  // 契约更新（评审 C2）：速率未知时不往曲线塞点，窗口保持不变
+  assert.deepEqual(toSnapshot({}, nullGroup, NOW).output.history, [], 'output 为 null 且速率未知时，曲线保持空');
 
   let chain = { ...emptySnapshot(NOW), output: { tokPerSec: 0, history: [] } };
   for (let i = 0; i < 100; i++) chain = toSnapshot({ 'vllm:avg_generation_throughput_toks_per_s': i }, chain, NOW + i);
