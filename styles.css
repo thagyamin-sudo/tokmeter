@@ -119,6 +119,7 @@ body {
   display: flex;
   align-items: baseline;
   gap: calc(var(--u) * 1.6);
+  width: fit-content;   /* 收宽到内容：探针据此断言"数字+单位不侵入折线区" */
 }
 .hero-num {
   font-size: calc(var(--u) * 11.5);

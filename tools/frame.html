@@ -7,15 +7,19 @@
   html, body { margin: 0; padding: 0; background: #000; }
   /* 无头 Edge 有最小窗口宽度，外层视口不可控；
      固定尺寸 iframe 才能得到被测页面真实的 390x844 视口。 */
-  iframe { width: 390px; height: 844px; border: 0; display: block; }
+  iframe { border: 0; display: block; }
 </style>
 </head>
 <body>
 <iframe id="stage"></iframe>
 <pre id="probe" hidden></pre>
 <script>
-  const q = new URLSearchParams(location.search).get('q') || '';
+  const sp = new URLSearchParams(location.search);
+  const q = sp.get('q') || '';
   const stage = document.getElementById('stage');
+  // 默认手机视口；探针用 w/h 覆盖以验证极窄/极宽下的比例（无头窗口宽度不可控，只能靠 iframe）
+  stage.style.width = (sp.get('w') || 390) + 'px';
+  stage.style.height = (sp.get('h') || 844) + 'px';
   const out = document.getElementById('probe');
   stage.addEventListener('load', () => {
     // 同源：把 iframe 内部的探针输出搬到父页面，便于 --dump-dom 抓取。

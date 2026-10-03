@@ -127,6 +127,7 @@ body {
   display: flex;
   align-items: baseline;
   gap: calc(var(--u) * 1.6);
+  width: fit-content;   /* 收宽到内容：探针据此断言"数字+单位不侵入折线区" */
 }
 .hero-num {
   font-size: calc(var(--u) * 11.5);
@@ -1237,7 +1238,14 @@ function collectProbe(root, s, stats) {
       unit: textOf(root, '.hero-unit'),
       clock: read('clock'),
     },
-    hero: { h: r2(hero.height), ratio: Math.round((hero.height / pr.width) * 10000) / 10000 },
+    hero: {
+      h: r2(hero.height),
+      ratio: Math.round((hero.height / pr.width) * 10000) / 10000,
+      numW: r2((root.querySelector('#out-rate') || { getBoundingClientRect: () => ({ width: 0 }) }).getBoundingClientRect().width),
+      valueRight: r2((root.querySelector('.hero-value') || { getBoundingClientRect: () => ({ right: 0 }) }).getBoundingClientRect().right),
+      chartLeft: r2((root.querySelector('#spark') || { getBoundingClientRect: () => ({ left: 0 }) }).getBoundingClientRect().left),
+    },
+    overflow: { doc: document.documentElement.scrollWidth, body: document.body.scrollWidth },
     spark: { points: (d.match(/[ML]/g) || []).length, d },
     cards: {
       heightRatio: cardEl ? Math.round((cardEl.getBoundingClientRect().height / pr.width) * 10000) / 10000 : 0,
@@ -1403,6 +1411,13 @@ if (testMode) {
   for (let i = 1; i < tickN; i++) {
     s = stepSnapshot(s, rnd, frozenNow() + i * 1000);
     stats.samples = i + 1;
+    store.update(s);
+  }
+  // 量级回归：把速率注入成极端值（如 2340000），验证数字变宽不会挤坏 Hero 卡
+  const inject = params.get('inject') || '';
+  const injectRate = inject.startsWith('rate:') ? Number(inject.slice(5)) : NaN;
+  if (Number.isFinite(injectRate)) {
+    s = { ...s, output: { ...s.output, tokPerSec: injectRate } };
     store.update(s);
   }
   if (params.get('fail') === '1') {

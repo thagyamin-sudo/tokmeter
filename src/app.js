@@ -76,6 +76,13 @@ if (testMode) {
     stats.samples = i + 1;
     store.update(s);
   }
+  // 量级回归：把速率注入成极端值（如 2340000），验证数字变宽不会挤坏 Hero 卡
+  const inject = params.get('inject') || '';
+  const injectRate = inject.startsWith('rate:') ? Number(inject.slice(5)) : NaN;
+  if (Number.isFinite(injectRate)) {
+    s = { ...s, output: { ...s.output, tokPerSec: injectRate } };
+    store.update(s);
+  }
   if (params.get('fail') === '1') {
     // 数据源不可达时的降级帧：状态变 error，其余字段沿用最后一帧（曲线保留、布局不变）
     store.update({ ...s, status: 'error' });

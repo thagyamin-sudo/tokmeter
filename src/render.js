@@ -259,7 +259,14 @@ export function collectProbe(root, s, stats) {
       unit: textOf(root, '.hero-unit'),
       clock: read('clock'),
     },
-    hero: { h: r2(hero.height), ratio: Math.round((hero.height / pr.width) * 10000) / 10000 },
+    hero: {
+      h: r2(hero.height),
+      ratio: Math.round((hero.height / pr.width) * 10000) / 10000,
+      numW: r2((root.querySelector('#out-rate') || { getBoundingClientRect: () => ({ width: 0 }) }).getBoundingClientRect().width),
+      valueRight: r2((root.querySelector('.hero-value') || { getBoundingClientRect: () => ({ right: 0 }) }).getBoundingClientRect().right),
+      chartLeft: r2((root.querySelector('#spark') || { getBoundingClientRect: () => ({ left: 0 }) }).getBoundingClientRect().left),
+    },
+    overflow: { doc: document.documentElement.scrollWidth, body: document.body.scrollWidth },
     spark: { points: (d.match(/[ML]/g) || []).length, d },
     cards: {
       heightRatio: cardEl ? Math.round((cardEl.getBoundingClientRect().height / pr.width) * 10000) / 10000 : 0,

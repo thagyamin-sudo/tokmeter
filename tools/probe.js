@@ -178,8 +178,23 @@ function checkRealtime(p) {
     'firstRate=' + p.samples.firstRate + ', rate=' + p.samples.rate);
   // tick=3 表示模拟 3 秒：冻结基点 23:48:30 前进 2 秒
   eq('采样：时钟随步进前进', p.texts.clock, '23:48:32');
-  eq('渲染：同步模式每帧都画', p.paintCount, 3);
-  eq('渲染：更新计数', p.updateCount, 3);
+  // 3 帧步进 + 1 帧量级注入
+  eq('渲染：同步模式每帧都画', p.paintCount, 4);
+  eq('渲染：更新计数', p.updateCount, 4);
+  // Review Focus 2：数值量级突变不得挤坏 Hero 卡
+  eq('量级：2.3M 渲染', p.texts.rate, '2.3M');
+  // 真正要守的边界是「数字 + tok/s 不得侵入右侧折线区」，而不是某个固定的宽度配额
+  eq('量级：数字与单位不侵入折线区', p.hero.valueRight <= p.hero.chartLeft + 0.5, true);
+  within('量级：大数字宽度 / 面板宽', (p.hero.numW / p.panel.w) * 100, 0, 36);
+  eq('量级：无横向溢出', p.overflow.doc <= p.viewport.w + 1, true);
+}
+
+/** Review Focus 1：极窄视口下比例与溢出。 */
+function checkNarrow(p, width) {
+  near('窄屏：面板宽 = min(92vw,420)', p.panel.w, Math.min(0.92 * width, 420), 1.5);
+  eq('窄屏：无横向溢出', p.overflow.doc <= p.viewport.w + 1, true);
+  eq('窄屏：折线仍为 60 点', p.spark.points, 60);
+  within('窄屏：卡片高 / 面板宽', p.cards.heightRatio, 0.25, 0.31);
 }
 
 /** 任务 9/12：数据源不可达时的降级渲染（布局不塌陷、曲线保留最后一帧）。 */
@@ -222,7 +237,7 @@ async function main() {
   checkCards(p);
 
   // 第二次运行：3 帧步进 + rAF 合并路径
-  const dom2 = await dumpDom(makeUrl('tick=3'));
+  const dom2 = await dumpDom(makeUrl('tick=3&inject=rate:2340000'));
   const m2 = dom2.match(/PROBE_JSON:(\{[\s\S]*?\})<\/pre>/);
   if (!m2) {
     add('实时模式探针', false, '第二次运行没有拿到探针输出');
@@ -231,6 +246,21 @@ async function main() {
   }
 
   // 第三次运行：降级路径
+  // 第四次运行：极窄视口（320x700）
+  const narrowW = 320;
+  const narrowH = 700;
+  const narrowUrl = server
+    ? 'http://127.0.0.1:' + server.address().port + '/tools/frame.html?w=' + narrowW + '&h=' + narrowH +
+      '&q=' + encodeURIComponent(query)
+    : makeUrl('');
+  const dom4 = await dumpDom(narrowUrl);
+  const m4 = dom4.match(/PROBE_JSON:(\{[\s\S]*?\})<\/pre>/);
+  if (!m4) {
+    add('窄屏探针', false, '极窄视口运行没有拿到探针输出');
+  } else {
+    checkNarrow(JSON.parse(m4[1]), narrowW);
+  }
+
   const dom3 = await dumpDom(makeUrl('fail=1&island=1'));
   const m3 = dom3.match(/PROBE_JSON:(\{[\s\S]*?\})<\/pre>/);
   if (!m3) {
