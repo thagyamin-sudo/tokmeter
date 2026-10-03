@@ -15,7 +15,7 @@
 - 运行时零第三方依赖：不引入框架、图表库、网络字体（系统字体栈）。
 - 开发入口 `index.html` 走 ESM；交付产物 `llm-monitor.html` 必须是单文件且能在 `file://` 下双击离线打开。
 - 尺寸一律 `calc(var(--u) * N)`，`--u` 由 JS 写入（面板宽度/100），CSS 兜底 `3.9px`；禁止硬编码像素宽度。
-- 颜色取自 spec `4.3 的 token：`--bg #1c1c1e`、`--card #2c2c2e`、`--track #3a3a3c`、`--hero-bg #26382a`、`--text #ffffff`、`--text-dim #a1a1a6`、`--green #3ddc5f`、`--lime #b8e62e`、`--blue #3fa4f5`、`--magenta #c85ae0`、`--orange #f7a33c`。改色必须走任务 11 并同步 spec。
+- 颜色取自 spec 第 4.3 节的 token：`--bg #1c1c1e`、`--card #2c2c2e`、`--track #3a3a3c`、`--hero-bg #26382a`、`--text #ffffff`、`--text-dim #a1a1a6`、`--green #3ddc5f`、`--lime #b8e62e`、`--blue #3fa4f5`、`--magenta #c85ae0`、`--orange #f7a33c`。改色必须走任务 11 并同步 spec。
 - 文案与截图逐字一致：Qwen3.8-Flash / vLLM · Dual DGX Spark / NAS 已连接 / 实时输出 Token / tok/s / 最近 60 秒 / 请求状态 / 活动 / 排队 / 输入 Token / Prefill 均值 / KV Cache / 占用率 / 余量充足 / Cache Hit / MTP / TAR / 统一内存 / GPU 活跃度 / 计算中 / 可用。
 - 数字一律 `font-variant-numeric: tabular-nums`。
 - 采样周期 1000ms；渲染用 `requestAnimationFrame` 合并。
@@ -438,7 +438,7 @@ test('1000 步后所有数值仍在值域内且有限', () => {
 
 - [ ] **Step 3: 逐块比对并记录差异清单**：9 个区域的比例（±5%）、配色、字号层级、圆角、图标形态。
 
-- [ ] **Step 4: 修正差异**（只动 `styles.css` / `render.js` 的尺寸与色值），每轮重跑 `node tools/probe.js` 与截图；色值变化同步写回 spec `4.3。
+- [ ] **Step 4: 修正差异**（只动 `styles.css` / `render.js` 的尺寸与色值），每轮重跑 `node tools/probe.js` 与截图；色值变化同步写回 spec 第 4.3 节。
 
 - [ ] **Step 5: 复跑全部门禁**：`node --test` + `node tools/probe.js` + `node tools/probe.js --target=llm-monitor.html` 全绿。
 
@@ -470,7 +470,7 @@ test('1000 步后所有数值仍在值域内且有限', () => {
 
 ## 自检记录
 
-- **Spec 覆盖**：`2 交付物 → T1/T10/T12；`3 非目标 → 未列入计划的功能一律不做（island 在 T12 做成开关）；`4 界面规格 → T1/T6/T7/T11；`5 架构 → 全任务；`6 数据模型 → T4（契约定义）；`7 数据流 → T8；`8 数据源契约 → T5/T9；`9 错误处理 → T9/T12；`10 测试策略 → 每任务 + T6 探针 + T11 视觉；`11 验收 → T11/T12；`12 风险 → T11 迭代。
+- **Spec 覆盖**：第 2 节交付物 → T1/T10/T12；第 3 节非目标 → 未列入计划的功能一律不做（island 在 T12 做成开关）；第 4 节界面规格 → T1/T6/T7/T11；第 5 节架构 → 全任务；第 6 节数据模型 → T4（契约定义）；第 7 节数据流 → T8；第 8 节数据源契约 → T5/T9；第 9 节错误处理 → T9/T12；第 10 节测试策略 → 每任务 + T6 探针 + T11 视觉；第 11 节验收 → T11/T12；第 12 节风险 → T11 迭代。
 - **类型一致性**：`Snapshot` 字段名只在 T4 定义一次，T5/T6/T7/T9/T12 全部引用同一组名字；`MetricsSource` 接口在 T5 定义，T9 复用。
 - **Review Focus 落点**：1→T1/T11；2→T2/T7；3→T9/T12；4→T2/T3/T5；5→T2/T4/T8。
 - **比例**：本计划 12 个任务、每个 3~8 步，未逐行转录实现代码。
