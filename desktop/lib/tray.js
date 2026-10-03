@@ -33,7 +33,8 @@ export function loadTrayIcon(iconPath) {
 /**
  * 菜单模板。ctx 由主进程提供：
  *   windowVisible() / toggleWindow() / alwaysOnTop() / setAlwaysOnTop(v) /
- *   view() / setView(v) / autoStart() / setAutoStart(v) / openConfig() / quit() / statusText()
+ *   view() / setView(v) / autoStart() / setAutoStart(v) / openConfig() / openSettings() /
+ *   revealConfig() / quit() / statusText()
  */
 function buildTemplate(ctx) {
   const visible = ctx.windowVisible();
@@ -72,7 +73,9 @@ function buildTemplate(ctx) {
       checked: !!ctx.autoStart(),
       click: (item) => ctx.setAutoStart(item.checked),
     },
-    { label: '打开配置文件', click: () => ctx.openConfig() },
+    // 设置入口：显示悬浮窗并打开面板内的设置浮层（不再用 shell.openPath 弹记事本）
+    { label: '设置…', click: () => ctx.openSettings() },
+    { label: '打开配置文件所在目录', click: () => ctx.revealConfig() },
     { type: 'separator' },
     { label: '退出 Tokmeter', click: () => ctx.quit() },
   ];

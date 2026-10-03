@@ -35,7 +35,7 @@ with all styles and scripts inlined — double-click it, and it runs offline. Yo
 
 ### Option 1 — Download the installer (recommended for Windows)
 
-Grab **`Tokmeter-0.1.0-setup.exe`** (about 87.8 MB) from [Releases](https://github.com/thagyamin-sudo/tokmeter/releases/latest) and double-click it.
+Grab **`Tokmeter-0.2.0-setup.exe`** (about 87.8 MB) from [Releases](https://github.com/thagyamin-sudo/tokmeter/releases/latest) and double-click it.
 
 - NSIS installer (`oneClick: false` + `perMachine: false`) — **you choose the install directory**, and no admin rights are required.
 - Creates a desktop shortcut and a Start Menu entry automatically.
@@ -161,14 +161,43 @@ After installing and launching Tokmeter you get a **frameless, transparent, roun
 | Always on top (checkable) | Writes `state.json`, takes effect immediately |
 | Switch view → server / client | Server = the panel's built-in mock engine; client = connects to the local collector |
 | Launch at login (checkable) | `app.setLoginItemSettings`, writes the HKCU Run key |
-| Open config file | Opens `%APPDATA%\Tokmeter\collector.config.json` |
+| Settings… | Shows the floating window and opens the **in-panel settings overlay** (baseUrl / key / model / probe interval / proxy / prices — no hand-editing JSON) |
+| Open config folder | Reveals `%APPDATA%\Tokmeter\collector.config.json` in Explorer |
 | Quit Tokmeter | Really quits (closing the window only hides it) |
 
 The desktop build ships an **embedded collector** (imported directly into the main process and bound to `127.0.0.1`), so you do not need to
 run `node collector.js` separately. On first launch it generates `%APPDATA%\Tokmeter\collector.config.json` from the template;
 fill in your key and pick "Switch view → client" from the tray menu.
 
-### 4. URL parameter reference
+### 4. Settings page (in-panel overlay)
+
+No file editing and no restart: click the **fourth footer button (the gear)**, or the **connection-status area on the right of the header**, and the settings page appears over the panel.
+
+![Settings page inside the panel](ref/settings.png)
+
+*Settings: baseUrl / API Key (the password box holds the masked value) / model / probe interval / proxy switch / two prices, with three buttons at the bottom*
+
+| Field | Notes |
+| --- | --- |
+| `baseUrl` | OpenAI-compatible endpoint; must start with `http://` or `https://` |
+| `API Key` | The password box shows the **masked** value (e.g. `sk-***c3a3`). **Leave it untouched (or empty) to keep the current key**; only a newly typed key overwrites it |
+| `model` | Must not be empty |
+| Probe interval | Milliseconds, minimum `5000` (the anti-burn-in floor) |
+| Compatible proxy | Maps to `proxy` |
+| Input / output price | Maps to `pricing.inPerM` / `pricing.outPerM` (USD per million tokens) |
+
+| Button | What it does |
+| --- | --- |
+| Test connection | Sends **one minimal streaming request** with the baseUrl / key / model currently in the form and reports `TTFT xx ms · xx tok/s` or the failure reason inline (nothing is written, nothing is counted) |
+| Save | Validates (illegal values return a readable message, e.g. `probeEveryMs 不得小于 5000`) → writes the config file → **hot-restarts probing** (no need to restart the collector or Tokmeter) |
+| Close | Hides the overlay |
+
+- Every in-progress state and error is shown **inline**; there are no alert boxes.
+- When the panel cannot reach a collector, the overlay says exactly: **"设置需要本机采集器（`node collector.js` 或桌面版）"** (settings need the local collector).
+- Desktop build: the tray item **"Settings…"** shows the floating window and opens this overlay; the neighbouring **"Open config folder"** reveals the config file in Explorer.
+- Underlying HTTP endpoints (bound to `127.0.0.1` only, CORS enabled): `GET /config` (`apiKey` returns only its last 4 characters), `POST /config`, `POST /config/test`.
+
+### 5. URL parameter reference
 
 | Parameter | Values | Default | Description |
 | --- | --- | --- | --- |
@@ -181,7 +210,8 @@ fill in your key and pick "Switch view → client" from the tray menu.
 | `tick` | integer | `0` | Number of frames to step in test mode |
 | `raf` | `1` | off | In test mode, use the real `requestAnimationFrame` render path |
 | `freeze` | `HH:MM:SS` | off | Freeze the clock so output is reproducible |
-| `press` | `power,copy,refresh` | empty | In test mode, auto-click footer buttons (comma-separated) |
+| `press` | `power,copy,refresh,settings` | empty | In test mode, auto-click footer buttons (comma-separated) |
+| `config` | URL | derived from `endpoint`, falling back to `http://127.0.0.1:8787` | Collector root the settings overlay talks to (the desktop shell passes the local port explicitly) |
 | `inject` | `rate:<number>` | empty | Inject an extreme rate to verify wide numbers do not break the hero card |
 | `name` | any string | empty | Override the model name to verify long names are truncated instead of breaking the header |
 | `fail` | `stale` / `error` / `both` / `1` | empty | Force a degraded state to verify the layout does not collapse |
@@ -189,15 +219,16 @@ fill in your key and pick "Switch view → client" from the tray menu.
 Combine parameters with `&`, for example:
 `llm-monitor.html?source=vllm&endpoint=http://127.0.0.1:8000/metrics&island=1`
 
-### 5. The three footer buttons
+### 6. The four footer buttons
 
-Three icon buttons sit at the bottom of the panel, left to right:
+Four icon buttons sit at the bottom of the panel, left to right:
 
 | Button | Title | What it does |
 | --- | --- | --- |
 | ⟳ Refresh | Refresh now | Immediately pulls one sample from the active data source (HTTP / vLLM / collector). Under the mock engine it only gives visual feedback. Flashes for 900 ms when pressed |
 | ⧉ Copy | Copy current status | Formats the current snapshot as plain text and copies it to the clipboard (starts with `Tokmeter`; includes model, rates, requests, KV/GPU — and for the client view TTFT, probe counts, usage and cost, with `--` for unknown values). Falls back to `execCommand('copy')` on `file://` or when permission is denied |
 | ⏻ Power | Pause/resume monitoring | While paused it stops the active data source entirely (no further requests are sent) and the button switches to its off state. Press again to resume polling |
+| ⚙ Settings | Settings | Opens the in-panel **settings overlay** (same as clicking the connection-status area in the header): baseUrl / API Key / model / probe interval / proxy / the two prices, with an in-place connection test and a hot restart of probing after saving |
 
 ---
 
@@ -298,8 +329,9 @@ That strip still belongs to the window and receives mouse events. Setting the wi
 - **The panel page contains no key**: `llm-monitor.html` is a pure static file with no secrets in it; with `?view=client` the browser only asks the local collector for data.
 - **`/snapshot` never returns the key**: the collector binds to `127.0.0.1` only and its response body contains no `apiKey` (covered by tests).
 - **The key is injected server-side when proxying**: with `proxy: true`, headers sent by the client are discarded and the key is added by the collector process, so the front end never sees it.
-- **Minimal surface**: the collector exposes only `GET /snapshot`, `GET /health` and (optionally) `POST /v1/*`.
-- **Read-only CORS**: `/snapshot` sends `Access-Control-Allow-Origin: *`, but it is a read-only endpoint, bound to localhost, containing no secrets.
+- **Minimal surface**: the collector exposes `GET /snapshot`, `GET /health`, `GET /config`, `POST /config`, `POST /config/test` and (optionally) `POST /v1/*`.
+- **Write endpoints trust this machine only**: `/config` and `/config/test` also send `Access-Control-Allow-Origin: *`, so **any page on this machine** can change the `baseUrl` / `model` / proxy flag / pricing and can spend one probe request. Therefore: never forward or expose port 8787 to a LAN or the internet, and on a shared machine any local user can reach it too.
+- **The key is one-way**: the read endpoint returns only the last 4 characters (`sk-***c3a3`); the write endpoint can replace the key but never read it, and an empty string, `***` or the masked value all mean "leave it unchanged". The key never appears in logs.
 - **Pre-commit check**: `collector.config.json` must never appear in `git status --short`.
 
 ---
@@ -320,13 +352,13 @@ The probe and screenshot scripts bring their own static server and headless Edge
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Unit tests | `node --test` | **91 / 91 passed**, 0 failed, about 2.8 s |
-| End-to-end probe | `node tools/probe.js` | **98 / 98 assertions passed** (viewport 390×844, panel 358.8×521.89) |
-| Single-file probe | `node tools/probe.js --target=llm-monitor.html` | **92 / 92 assertions passed** (viewport 504×805, panel 420×610.56) |
-| Single-file build | `node build.js` | `llm-monitor.html` at 81,299 bytes (79.4 KB), 11 inlined modules; repeat builds are **byte-identical (SHA256)** |
-| Installer | `Tokmeter-0.1.0-setup.exe` | 92,069,277 bytes (87.8 MB), SHA256 `9CDD7BAF…C5165F90` |
+| Unit tests | `node --test` | **110 / 110 passed**, 0 failed, about 2.8 s |
+| End-to-end probe | `node tools/probe.js` | **141 / 141 assertions passed** (viewport 390×844, panel 358.8×521.89) |
+| Single-file probe | `node tools/probe.js --target=llm-monitor.html` | **135 / 135 assertions passed** (viewport 504×805, panel 420×610.56) |
+| Single-file build | `node build.js` | `llm-monitor.html` at 102,443 bytes (100.0 KB), 12 inlined modules; repeat builds are **byte-identical (SHA256)** |
+| Installer | `Tokmeter-0.2.0-setup.exe` | 92,079,376 bytes (87.8 MB), `VersionInfo.FileVersion = 0.2.0`, SHA256 `D7EE375A…48DC9BF` |
 
-Single-file artifact SHA256: `70A5DCAF1AA9FD75CC2180C2F5A3568C34C662EE9C9DD447C449EB2674F670A3`
+Single-file artifact SHA256: `30EAF39A310C5368F1B9EF5D9F88B1450F4D80929A4D21727109AAA67EEFEEAC`
 
 ### Fidelity to the reference design
 
@@ -354,13 +386,14 @@ src/units.js                  proportional scaling units
 src/store.js                  Snapshot contract, ring buffer, state container
 src/scheduler.js              render throttling (at most one repaint per animation frame)
 src/render.js                 static structure + per-frame updates + probe collection
+src/settings.js               in-panel settings overlay: GET/POST /config, /config/test, masked apiKey round-trip
 src/sources/mock.js           mock vLLM telemetry engine (seedable, deterministic)
 src/sources/http.js           JSON polling + degradation/backoff + transform injection
 src/sources/vllm-metrics.js   Prometheus text parsing and mapping
 src/sources/client.js         client-view payload mapping
 collector.js                  collector entry point (node collector.js)
 collector/config.js           config defaults + validation
-collector/server.js           HTTP service: /snapshot, /health, optional /v1 proxy
+collector/server.js           HTTP service: /snapshot, /health, /config, /config/test, optional /v1 proxy
 collector/openai-probe.js     OpenAI streaming response measurement (TTFT / tok/s)
 collector/stats.js            sliding-window statistics (P50/P95, success rate, usage, cost)
 collector.config.example.json config template (placeholder key)
@@ -368,7 +401,7 @@ build.js                      dependency-free single-file build
 tools/probe.js                E2E probe
 tools/shot.js                 screenshots
 desktop/                      Windows desktop build (Electron shell + embedded collector + NSIS installer)
-tests/                        unit tests (91)
+tests/                        unit tests (110)
 ref/                          reference screenshots and comparison artifacts
 ```
 

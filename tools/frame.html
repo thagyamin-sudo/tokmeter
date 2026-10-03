@@ -21,15 +21,19 @@
   stage.style.width = (sp.get('w') || 390) + 'px';
   stage.style.height = (sp.get('h') || 844) + 'px';
   const out = document.getElementById('probe');
-  stage.addEventListener('load', () => {
-    // 同源：把 iframe 内部的探针输出搬到父页面，便于 --dump-dom 抓取。
+  // 同源：把 iframe 内部的探针输出搬到父页面，便于 --dump-dom 抓取。
+  function mirror() {
     try {
       const inner = stage.contentDocument.getElementById('probe');
       out.textContent = inner ? inner.textContent : 'PROBE_JSON:{}';
     } catch (err) {
       out.textContent = 'PROBE_ERROR:' + err.message;
     }
-  });
+  }
+  stage.addEventListener('load', mirror);
+  // 只在 load 时搬一次会漏掉 load 之后才结束的异步 UI（设置浮层读配置/测试连接，
+  // 实测抓到的是"正在读取配置…"那一帧），所以持续镜像。
+  setInterval(mirror, 50);
   stage.src = '../index.html' + (q ? '?' + q : '');
 </script>
 </body>

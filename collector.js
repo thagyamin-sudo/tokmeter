@@ -17,13 +17,15 @@ try {
 }
 
 const log = (m) => console.log('[' + new Date().toLocaleTimeString() + '] ' + m);
-const collector = createCollector({ config, log });
+// 把配置文件路径交给采集器：面板的设置浮层（POST /config）要写回这一个文件
+const collector = createCollector({ config, log, configPath: path });
 const server = createServer(collector.handler);
 
 server.listen(config.port, '127.0.0.1', () => {
   console.log('采集器已启动：http://127.0.0.1:' + config.port + '/snapshot');
   console.log('目标 ' + config.model + ' @ ' + config.baseUrl + '，每 ' + config.probeEveryMs + 'ms 主动探测一次');
   console.log('打开面板：llm-monitor.html?view=client （或 index.html?view=client）');
+  console.log('面板页脚齿轮 / 点标题栏右侧状态区 → 面板内设置（GET/POST http://127.0.0.1:' + config.port + '/config）');
   if (config.proxy) console.log('转发已开启：把应用的 base_url 指到 http://127.0.0.1:' + config.port + '/v1 即可统计真实流量');
   collector.start();
 });

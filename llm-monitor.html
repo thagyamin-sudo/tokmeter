@@ -48,6 +48,7 @@ body {
    面板内一切尺寸都写成 calc(var(--u) * N)，任何视口下比例都一致。 */
 .panel {
   --u: 3.9px;
+  position: relative;   /* 设置浮层用 absolute inset:0 盖在面板内部（不改变默认视图的任何尺寸） */
   width: min(92vw, 420px);
   background: var(--bg);
   border-radius: calc(var(--u) * 4.4);
@@ -102,6 +103,7 @@ body {
   font-size: calc(var(--u) * 3.2);
   font-weight: 700;
   white-space: nowrap;
+  cursor: pointer;      /* 连接状态区也是设置入口（见 src/app.js 的 wireControls） */
 }
 .chev {
   display: block;
@@ -373,6 +375,111 @@ button.ftr-icon {
 button.ftr-icon:hover { opacity: 0.7; }
 button.ftr-icon.is-off { color: var(--text-dim); opacity: 0.5; }   /* 已暂停 */
 button.ftr-icon.is-flash { color: var(--green); }                  /* 操作成功反馈 */
+
+/* ---------- 设置浮层（面板内，默认隐藏；点页脚齿轮或标题栏状态区打开） ---------- */
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 2.2);
+  padding: calc(var(--u) * 4);
+  border-radius: calc(var(--u) * 4.4);
+  background: rgba(22, 22, 24, 0.98);
+  overflow-y: auto;
+  -webkit-app-region: no-drag;
+}
+.overlay[hidden] { display: none; }
+.set-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: calc(var(--u) * 4);
+  font-weight: 700;
+}
+.set-note {
+  margin: 0;
+  font-size: calc(var(--u) * 2.9);
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--orange);
+}
+.set-note[hidden] { display: none; }
+.set-row {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 0.9);
+  font-size: calc(var(--u) * 2.7);
+  font-weight: 700;
+  color: var(--text-dim);
+}
+.set-row-check {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--u) * 2);
+  color: var(--text);
+}
+.set-row input[type="text"],
+.set-row input[type="password"],
+.set-row input[type="number"] {
+  width: 100%;
+  padding: calc(var(--u) * 1.6) calc(var(--u) * 2);
+  border: calc(var(--u) * 0.25) solid var(--track);
+  border-radius: calc(var(--u) * 1.8);
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  font-size: calc(var(--u) * 3);
+  -webkit-app-region: no-drag;
+}
+.set-row input:disabled { opacity: 0.5; }
+.set-row input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: calc(var(--u) * 4.2);
+  height: calc(var(--u) * 4.2);
+  accent-color: var(--green);
+  -webkit-app-region: no-drag;
+}
+.set-actions {
+  display: flex;
+  gap: calc(var(--u) * 1.8);
+  margin-top: auto;
+  padding-top: calc(var(--u) * 1.6);
+}
+.set-btn {
+  flex: 1 1 0;
+  padding: calc(var(--u) * 1.9) 0;
+  border: calc(var(--u) * 0.25) solid var(--track);
+  border-radius: calc(var(--u) * 2.2);
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  font-size: calc(var(--u) * 2.9);
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+.set-btn:disabled { opacity: 0.45; cursor: default; }
+.set-primary { background: var(--green); border-color: transparent; color: #0b1a0e; }
+.set-status {
+  margin: 0;
+  min-height: calc(var(--u) * 3.2);
+  font-size: calc(var(--u) * 2.7);
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--green);
+}
+.set-error {
+  margin: 0;
+  font-size: calc(var(--u) * 2.7);
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--orange);
+  word-break: break-word;
+}
+.set-error[hidden] { display: none; }
 
 /* 可选：灵动岛样式的胶囊（?island=1） */
 .island {
@@ -1311,6 +1418,8 @@ const ICONS = {
   gauge: '<svg viewBox="0 0 16 16" width="100%" height="100%"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 4.2v1.6M8 10.2v1.6M4.2 8h1.6M10.2 8h1.6M5.3 5.3l1.1 1.1M9.6 9.6l1.1 1.1M10.7 5.3 9.6 6.4M6.4 9.6 5.3 10.7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
   cloud: '<svg viewBox="0 0 16 16" width="100%" height="100%"><path d="M4.6 12.4h6.9a2.6 2.6 0 0 0 .3-5.2 3.8 3.8 0 0 0-7.3-.9A2.9 2.9 0 0 0 4.6 12.4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>',
   doc: '<svg viewBox="0 0 16 16" width="100%" height="100%"><path d="M4 1.9h5l3 3v9.2H4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M6.2 8.2h3.6M6.2 10.6h3.6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
+  // 设置齿轮（viewBox 24：与 Feather settings 的路径一致，缩放后与其余图标等大）
+  gear: '<svg viewBox="0 0 24 24" width="100%" height="100%"><circle cx="12" cy="12" r="3.1" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
 };
 { ICONS };
 
@@ -1486,6 +1595,7 @@ function renderShell(root, view = 'server') {
     '    <button type="button" class="ftr-icon" id="btn-refresh" title="立即刷新" aria-label="立即刷新">' + ICONS.refresh + '</button>',
     '    <button type="button" class="ftr-icon" id="btn-copy" title="复制当前状态" aria-label="复制当前状态">' + ICONS.copy + '</button>',
     '    <button type="button" class="ftr-icon" id="btn-power" title="暂停/恢复监测" aria-label="暂停/恢复监测">' + ICONS.power + '</button>',
+    '    <button type="button" class="ftr-icon" id="btn-settings" title="设置" aria-label="设置">' + ICONS.gear + '</button>',
     '  </div>',
     '</footer>',
   ].join('\n');
@@ -1752,11 +1862,68 @@ function collectProbe(root, s, stats) {
       },
     },
     dim: root.classList.contains('is-degraded'),
-    // 页脚三个按钮必须真的存在且可用（曾经只是装饰图标）
+    // 设置浮层：默认必须隐藏（不能盖住默认视图），点了齿轮才出现
+    settings: (() => {
+      const box = root.querySelector('#settings-overlay');
+      const q = (id) => root.querySelector('#' + id);
+      const has = (id) => !!q(id);
+      const note = q('set-notice');
+      const err = q('set-error');
+      const key = q('set-apikey');
+      const flag = (id) => { const n = q(id); return n ? !!n.disabled : null; };
+      return {
+        present: !!box,
+        hidden: box ? !!box.hidden : null,
+        open: box ? !box.hidden : false,
+        title: textOf(root, '#set-title'),
+        notice: textOf(root, '#set-notice'),
+        noticeHidden: note ? !!note.hidden : null,
+        status: textOf(root, '#set-status'),
+        error: textOf(root, '#set-error'),
+        errorHidden: err ? !!err.hidden : null,
+        // 字段必须齐全：对应采集器的 baseUrl / apiKey / model / probeEveryMs / proxy / pricing
+        fields: {
+          baseUrl: has('set-baseurl'),
+          apiKey: has('set-apikey'),
+          apiKeyPassword: key ? key.type === 'password' : false,
+          apiKeyPlaceholder: key ? key.placeholder : null,
+          model: has('set-model'),
+          probeEveryMs: has('set-interval'),
+          proxy: has('set-proxy'),
+          priceIn: has('set-in-perm'),
+          priceOut: has('set-out-perm'),
+        },
+        buttons: { test: has('set-test'), save: has('set-save'), close: has('set-close') },
+        disabled: { test: flag('set-test'), save: flag('set-save') },
+      };
+    })(),
+    // 页脚四个按钮必须真的存在且可用（曾经只是装饰图标）
     controls: {
       refresh: !!root.querySelector('#btn-refresh'),
       copy: !!root.querySelector('#btn-copy'),
       power: !!root.querySelector('#btn-power'),
+      settings: !!root.querySelector('#btn-settings'),
+      // 几何：加第 4 个齿轮最容易踩的坑是"把其余三个挤小/挤换行"，所以逐个量出来按 u 断言
+      geometry: (() => {
+        const ftr = root.querySelector('.ftr');
+        const fr = ftr ? ftr.getBoundingClientRect() : null;
+        const box = (id) => {
+          const n = root.querySelector('#' + id);
+          if (!n) return null;
+          const r = n.getBoundingClientRect();
+          return { x: r2(r.left), right: r2(r.right), w: r2(r.width), h: r2(r.height) };
+        };
+        const unit = parseFloat(getComputedStyle(root).getPropertyValue('--u'));
+        return {
+          unit: Number.isFinite(unit) ? r2(unit) : null,
+          refresh: box('btn-refresh'),
+          copy: box('btn-copy'),
+          power: box('btn-power'),
+          settings: box('btn-settings'),
+          footerLeft: fr ? r2(fr.left) : null,
+          footerRight: fr ? r2(fr.right) : null,
+        };
+      })(),
       press: { ...((stats && stats.press) || {}) },   // 按键结果放在 press 里，别覆盖上面的存在性标记
     },
     degrade: { staleLink: (stats && stats.staleLink) || null, staleDim: !!(stats && stats.staleDim) },
@@ -1774,6 +1941,319 @@ function collectProbe(root, s, stats) {
     },
     status: s.status,
   };
+}
+
+/* ===== src/settings.js ===== */
+/**
+ * 面板内浮层设置页：读写本机采集器的配置。
+ *
+ *   GET  <base>/config       → 回填表单（apiKey 是脱敏值，密码框里显示的就是它）
+ *   POST <base>/config       → 保存（apiKey 留空或回传 *** 表示不改动；非法值 400 + 中文提示）
+ *   POST <base>/config/test  → 用当前表单值发一次最小流式请求，量 TTFT / tok/s
+ *
+ * 面板可能以 file:// 打开，所以全部走采集器的 CORS 接口；页面上永远不出现明文 key。
+ * 没有采集器时不弹 alert，只在浮层里显示一行可操作的提示。
+ */
+
+/** 采集器不在时的提示文案（与 README / 桌面壳一致）。 */
+const NO_COLLECTOR_HINT = '设置需要本机采集器（node collector.js 或桌面版）';
+
+/**
+ * 从面板的 snapshot 端点推出采集器根地址：
+ * http://127.0.0.1:8787/snapshot → http://127.0.0.1:8787
+ */
+function configBaseFromEndpoint(endpoint, fallback = 'http://127.0.0.1:8787') {
+  const raw = String(endpoint === undefined || endpoint === null ? '' : endpoint).trim();
+  if (raw === '') return fallback;
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return fallback;
+  }
+}
+
+/** 表单字段 → 提交给 POST /config 的补丁（空字段不提交，避免把 0/空串当成用户意图）。 */
+function buildConfigPatch(fields) {
+  const f = fields && typeof fields === 'object' ? fields : {};
+  const patch = {};
+  const text = (v) => (typeof v === 'string' ? v.trim() : '');
+  if (text(f.baseUrl) !== '') patch.baseUrl = text(f.baseUrl);
+  if (text(f.model) !== '') patch.model = text(f.model);
+  if (typeof f.apiKey === 'string') patch.apiKey = f.apiKey.trim();          // '' / '***' 都表示不改动
+  if (text(f.probeEveryMs) !== '') patch.probeEveryMs = Number(f.probeEveryMs);
+  patch.proxy = f.proxy === true;
+  const pricing = {};
+  if (text(f.inPerM) !== '') pricing.inPerM = Number(f.inPerM);
+  if (text(f.outPerM) !== '') pricing.outPerM = Number(f.outPerM);
+  if (Object.keys(pricing).length > 0) patch.pricing = pricing;
+  return patch;
+}
+
+/** 表单 HTML（保持极简：一行一个字段，不需要滚动就能看全）。 */
+function formHtml() {
+  return [
+    '<div class="set-head"><span id="set-title">设置</span></div>',
+    '<p class="set-note" id="set-notice" hidden></p>',
+    '<label class="set-row" for="set-baseurl"><span>接口地址 baseUrl</span>',
+    '  <input id="set-baseurl" type="text" spellcheck="false" autocomplete="off" placeholder="https://api.deepseek.com/v1"></label>',
+    '<label class="set-row" for="set-apikey"><span>API Key（留空或 *** 表示不改动）</span>',
+    '  <input id="set-apikey" type="password" spellcheck="false" autocomplete="off" placeholder="sk-…"></label>',
+    '<label class="set-row" for="set-model"><span>模型 model</span>',
+    '  <input id="set-model" type="text" spellcheck="false" autocomplete="off" placeholder="deepseek-chat"></label>',
+    '<label class="set-row" for="set-interval"><span>探测间隔（毫秒，最小 5000）</span>',
+    '  <input id="set-interval" type="number" min="5000" step="1000" inputmode="numeric"></label>',
+    '<label class="set-row set-row-check" for="set-proxy"><span>开启 OpenAI 兼容转发（/v1）</span>',
+    '  <input id="set-proxy" type="checkbox"></label>',
+    '<label class="set-row" for="set-in-perm"><span>输入单价（美元 / 百万 token）</span>',
+    '  <input id="set-in-perm" type="number" min="0" step="0.01" inputmode="decimal"></label>',
+    '<label class="set-row" for="set-out-perm"><span>输出单价（美元 / 百万 token）</span>',
+    '  <input id="set-out-perm" type="number" min="0" step="0.01" inputmode="decimal"></label>',
+    '<div class="set-actions">',
+    '  <button type="button" class="set-btn" id="set-test">测试连接</button>',
+    '  <button type="button" class="set-btn set-primary" id="set-save">保存</button>',
+    '  <button type="button" class="set-btn" id="set-close">关闭</button>',
+    '</div>',
+    '<p class="set-status" id="set-status"></p>',
+    '<p class="set-error" id="set-error" hidden></p>',
+  ].join('\n');
+}
+
+/**
+ * 在面板里挂一个设置浮层。
+ * @param {{root:HTMLElement, baseUrl:string, fetchImpl?:Function, onSaved?:Function, timeoutMs?:number}} opts
+ */
+function createSettings({ root, baseUrl, fetchImpl = fetch, onSaved = () => {}, timeoutMs = 8000 } = {}) {
+  const el = document.createElement('div');
+  el.className = 'overlay';
+  el.id = 'settings-overlay';
+  el.hidden = true;
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-label', '设置');
+  el.innerHTML = formHtml();
+  root.appendChild(el);
+
+  const $ = (id) => el.querySelector('#' + id);
+  const notice = $('set-notice');
+  const statusLine = $('set-status');
+  const errorLine = $('set-error');
+  const inputs = ['set-baseurl', 'set-apikey', 'set-model', 'set-interval', 'set-proxy', 'set-in-perm', 'set-out-perm'].map($);
+  const buttons = ['set-test', 'set-save'].map($);
+  const closeBtn = $('set-close');
+  let offline = false;      // 采集器不可达：表单只读，只留「关闭」
+  let maskedKey = '';       // 上一次回填的脱敏值（没被改过就等于没动 key）
+
+  function setStatus(text) {
+    statusLine.textContent = text || '';
+  }
+
+  function setError(text) {
+    const msg = text ? String(text) : '';
+    errorLine.textContent = msg;
+    errorLine.hidden = msg === '';
+  }
+
+  function setBusy(busy, text) {
+    for (const b of buttons) b.disabled = busy || offline;
+    for (const i of inputs) i.disabled = !!offline;
+    if (text !== undefined) setStatus(text);
+  }
+
+  function goOffline(message) {
+    offline = true;
+    notice.textContent = message || NO_COLLECTOR_HINT;
+    notice.hidden = false;
+    setBusy(false, '');
+    for (const i of inputs) i.disabled = true;
+    for (const b of buttons) b.disabled = true;
+  }
+
+  function value(id) {
+    const node = $(id);
+    return node ? node.value : '';
+  }
+
+  function fill(cfg) {
+    const c = cfg && typeof cfg === 'object' ? cfg : {};
+    $('set-baseurl').value = c.baseUrl || '';
+    maskedKey = c.apiKey || '';
+    $('set-apikey').value = maskedKey;            // 脱敏值：sk-***c3a3 / ****c3a3
+    // 占位符同样显示脱敏值：把输入框清空后仍然看得出"配置里已经有一把 key"（真 key 永不进页面）
+    $('set-apikey').placeholder = maskedKey || '留空 = 不改动';
+    $('set-model').value = c.model || '';
+    $('set-interval').value = Number.isFinite(Number(c.probeEveryMs)) ? String(c.probeEveryMs) : '';
+    $('set-proxy').checked = c.proxy === true;
+    const pricing = c.pricing && typeof c.pricing === 'object' ? c.pricing : {};
+    $('set-in-perm').value = Number.isFinite(Number(pricing.inPerM)) ? String(pricing.inPerM) : '';
+    $('set-out-perm').value = Number.isFinite(Number(pricing.outPerM)) ? String(pricing.outPerM) : '';
+  }
+
+  /**
+   * 提交用的 apiKey：与回填的脱敏值一字不差 = 用户没动它 → 提交空串（明确表示不改动）。
+   * 这样即便采集器只把「纯星号」当哨兵，也不会把真 key 覆盖成 sk-***xxxx。
+   */
+  function apiKeyForSubmit() {
+    const v = value('set-apikey').trim();
+    if (v === '') return '';
+    if (maskedKey !== '' && v === maskedKey) return '';
+    return v;
+  }
+
+  function fields() {
+    return {
+      baseUrl: value('set-baseurl'),
+      apiKey: apiKeyForSubmit(),
+      model: value('set-model'),
+      probeEveryMs: value('set-interval'),
+      proxy: $('set-proxy').checked,
+      inPerM: value('set-in-perm'),
+      outPerM: value('set-out-perm'),
+    };
+  }
+
+  function timeoutSignal(ms) {
+    const t = Number.isFinite(ms) && ms > 0 ? ms : timeoutMs;
+    return typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(t) : undefined;
+  }
+
+  /** 一次 JSON 请求；HTTP 非 2xx 时把采集器的中文 message 抛出来。 */
+  async function request(path, init, ms) {
+    const res = await fetchImpl(baseUrl + path, { cache: 'no-store', ...init, signal: timeoutSignal(ms) });
+    let json = null;
+    try {
+      json = await res.json();
+    } catch { /* 非 JSON：下面按状态码兜底 */ }
+    if (!res.ok) {
+      // 采集器有两种错误形状：{message} / {error:{message}}——都取最里层那句中文
+      const raw = json ? (json.message || json.error) : null;
+      const message = typeof raw === 'string'
+        ? raw
+        : raw && typeof raw.message === 'string'
+          ? raw.message
+          : 'HTTP ' + res.status;
+      const err = new Error(message);
+      err.status = res.status;
+      throw err;
+    }
+    return json || {};
+  }
+
+  /**
+   * 打开浮层：先显示，再去读配置（拖动/输入都不阻塞）。
+   *
+   * 读配置是本机回环，正常几毫秒就回来；但采集器没开时（尤其是 file:// 页面跨源请求
+   * 被浏览器挂在半路），fetch 可能很久都不 settle——绝不能让浮层空着等：
+   * 1.2 秒还没有结果就先给出「设置需要本机采集器」这句可操作提示，
+   * 真配置回来后再覆盖掉它（活着的采集器几乎不可能慢过 1.2 秒）。
+   */
+  async function refresh() {
+    setError('');
+    offline = false;
+    setBusy(true, '正在读取配置…');
+    let settled = false;
+    const grace = setTimeout(() => {
+      if (!settled) goOffline(NO_COLLECTOR_HINT);
+    }, 1200);
+    try {
+      const data = await request('/config', { method: 'GET' }, 1500);
+      settled = true;
+      clearTimeout(grace);
+      offline = false;
+      notice.hidden = true;
+      const cfg = data.config || data;
+      fill(cfg);
+      const cfgPath = data.configPath || cfg.configPath || '';
+      setBusy(false, cfgPath ? '配置文件：' + cfgPath : '');
+    } catch (err) {
+      settled = true;
+      clearTimeout(grace);
+      goOffline(NO_COLLECTOR_HINT);
+      setStatus('');
+      setError('读不到采集器配置：' + (err && err.message ? err.message : String(err)));
+    }
+  }
+
+  async function open() {
+    el.hidden = false;
+    setError('');
+    await refresh();
+  }
+
+  function close() {
+    el.hidden = true;
+    setError('');
+    setStatus('');
+  }
+
+  async function runTest() {
+    setError('');
+    setBusy(true, '测试中…（一次最小流式请求）');
+    try {
+      const patch = buildConfigPatch(fields());
+      const body = { baseUrl: patch.baseUrl, apiKey: apiKeyForSubmit(), model: patch.model };
+      const out = await request('/config/test', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (out.ok) setStatus('连接正常：TTFT ' + Math.round(out.ttftMs) + 'ms · ' + Math.round(out.tokPerSec) + ' tok/s');
+      else {
+        setStatus('');
+        setError('连接失败：' + (out.error || '未知错误'));
+      }
+    } catch (err) {
+      setStatus('');
+      setError('连接失败：' + (err && err.message ? err.message : String(err)));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function save() {
+    setError('');
+    setBusy(true, '保存中…（写回配置文件并热重启探测）');
+    try {
+      const out = await request('/config', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(buildConfigPatch(fields())),
+      });
+      fill(out.config || {});
+      const suffix = out.saved === false ? '' : '（已写回配置文件）';
+      const probe = out.probe;
+      if (!probe) setStatus('已保存' + suffix);
+      else if (probe.ok) setStatus('已保存' + suffix + ' · 探测正常 TTFT ' + Math.round(probe.ttftMs || 0) + 'ms');
+      else setStatus('已保存' + suffix + ' · 探测失败：' + (probe.error || '未知错误'));
+      if (out.saveError) setError(out.saveError);
+      onSaved(out);
+    } catch (err) {
+      setStatus('');
+      setError('保存失败：' + (err && err.message ? err.message : String(err)));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  for (const b of buttons) {
+    if (b.id === 'set-test') b.addEventListener('click', () => { void runTest(); });
+    else b.addEventListener('click', () => { void save(); });
+  }
+  if (closeBtn) closeBtn.addEventListener('click', close);
+  el.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') close();
+  });
+
+  const api = {
+    el,
+    open,
+    close,
+    refresh,
+    toggle: () => (el.hidden ? open() : close()),
+    isOpen: () => el.hidden === false,
+    isOffline: () => offline,
+  };
+  // 桌面壳（托盘「设置…」）通过这个钩子打开浮层，不必知道面板内部结构
+  if (typeof window !== 'undefined') window.__tokmeterOpenSettings = () => { void open(); };
+  return api;
 }
 
 /* ===== src/scheduler.js ===== */
@@ -1829,9 +2309,10 @@ const view = params.get('view') === 'client' ? 'client' : 'server';
 
 const panel = document.getElementById('panel');
 
-/** 页脚三个按钮的真实行为：刷新 / 复制 / 暂停。 */
+/** 页脚四个按钮的真实行为：刷新 / 复制 / 暂停 / 设置。 */
 let activeSource = null;
 let paused = false;
+let settings = null;
 
 function flash(btn) {
   if (!btn) return;
@@ -1873,6 +2354,18 @@ function wireControls() {
   const refresh = document.getElementById('btn-refresh');
   const copyBtn = document.getElementById('btn-copy');
   const power = document.getElementById('btn-power');
+  const gear = document.getElementById('btn-settings');
+  if (gear) gear.addEventListener('click', () => { if (settings) settings.toggle ? settings.toggle() : settings.open(); });
+  // 标题栏右侧的连接状态区也是设置入口（点哪里都能打开同一张浮层）
+  const link = panel.querySelector('.hdr-link');
+  if (link) {
+    link.setAttribute('role', 'button');
+    link.setAttribute('tabindex', '0');
+    link.addEventListener('click', () => { if (settings) settings.open(); });
+    link.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); if (settings) settings.open(); }
+    });
+  }
   if (refresh) refresh.addEventListener('click', () => {
     if (activeSource && typeof activeSource.pollOnce === 'function') activeSource.pollOnce();
     flash(refresh);
@@ -1903,6 +2396,14 @@ addEventListener('orientationchange', layout);
 
 panel.dataset.view = view;
 renderShell(panel, view);
+/** 设置浮层：采集器根地址优先取 ?config=，否则从 snapshot 端点推（桌面壳会显式带上 ?config=）。 */
+settings = createSettings({
+  root: panel,
+  baseUrl: params.get('config') || configBaseFromEndpoint(params.get('endpoint')),
+  onSaved: () => {
+    if (activeSource && typeof activeSource.pollOnce === 'function') activeSource.pollOnce();
+  },
+});
 wireControls();
 if (params.get('island') === '1') renderIsland();   // 可选：灵动岛胶囊，默认关闭
 
@@ -1921,12 +2422,14 @@ function applyPress() {
   if (press.length === 0) return;
   stats.press = {};
   for (const name of press) {
-    const btn = document.getElementById('btn-' + name);
+    // 页脚按钮是 #btn-xxx；设置浮层里的按钮是 #set-xxx（press=settings,close 用来验证浮层能关掉）
+    const btn = document.getElementById('btn-' + name) || document.getElementById('set-' + name);
     if (!btn) continue;
     btn.click();
     if (name === 'power') stats.press.power = { paused: stats.paused === true, isOff: btn.classList.contains('is-off') };
     if (name === 'copy') stats.press.copy = { text: stats.copied || null };
     if (name === 'refresh') stats.press.refresh = { ok: true };
+    if (name === 'settings') stats.press.settings = { open: !!(settings && settings.isOpen()) };
   }
   store.update({});   // 探针在绘制时序列化，按键结果要再画一帧才带得出去
 }
@@ -1953,6 +2456,11 @@ function onUpdate(s) {
 }
 
 store.subscribe(onUpdate);
+
+// 测试模式：设置浮层的"读配置 / 测试连接"是异步的，完成时没有新的数据帧，
+// 探针就会停在"读取中"那一帧（实测：--dump-dom 抓到的是空提示）。
+// 这里按固定节奏把当前状态重写进 #probe，保证抓到的是异步结束之后的 DOM。
+if (testMode) setInterval(() => writeProbe(store.get()), 50);
 
 /** 客户端视图的确定性样本：数值固定，便于探针断言。 */
 function clientFixture(now, seedValue) {

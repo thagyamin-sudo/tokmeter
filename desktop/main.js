@@ -172,6 +172,31 @@ async function openConfig() {
   return file;
 }
 
+/** 托盘「设置…」：显示悬浮窗，再让面板把设置浮层打开（不碰 shell.openPath）。 */
+async function openSettings() {
+  ensureConfigFile();
+  showWindow();
+  if (!ctx.win || ctx.win.isDestroyed()) return false;
+  try {
+    const opened = await ctx.win.webContents.executeJavaScript(
+      'window.__tokmeterOpenSettings ? (window.__tokmeterOpenSettings(), true) : false'
+    );
+    log('托盘 → 设置浮层：' + (opened ? '已打开' : '面板还没挂上设置入口（页面可能仍在加载）'));
+    return !!opened;
+  } catch (err) {
+    log('打开设置浮层失败：' + (err && err.message ? err.message : err));
+    return false;
+  }
+}
+
+/** 托盘「打开配置文件所在目录」：在资源管理器里选中配置文件。 */
+function revealConfig() {
+  const { path: file } = ensureConfigFile();
+  shell.showItemInFolder(file);
+  log('在资源管理器中显示配置文件：' + file);
+  return file;
+}
+
 function notify(title, content) {
   if (ctx.trayApi) ctx.trayApi.balloon({ title, content });
 }
@@ -279,6 +304,8 @@ function createTrayUI() {
     autoStart: getAutoStart,
     setAutoStart,
     openConfig: () => { void openConfig(); },
+    openSettings: () => { void openSettings(); },
+    revealConfig: () => { revealConfig(); },
     quit: () => {
       ctx.quitting = true;
       app.quit();
@@ -403,6 +430,17 @@ async function runSelfTest() {
     '};})()'
   ).catch((err) => ({ error: err.message }));
   add('面板 DOM 渲染', injected && injected.panel && injected.hdr && injected.ftrActions, JSON.stringify(injected));
+  const settingsUi = await win.webContents.executeJavaScript(
+    '(function(){' +
+    'var gear=document.getElementById("btn-settings"), box=document.getElementById("settings-overlay");' +
+    'if(!gear||!box) return {gear:!!gear, overlay:!!box, defaultHidden:box?!!box.hidden:null};' +
+    'gear.click();' +
+    'return {gear:true, overlay:true, defaultHidden:false, opened:!box.hidden};' +
+    '})()'
+  ).catch((err) => ({ error: err.message }));
+  add('页脚齿轮 → 面板内设置浮层', settingsUi && settingsUi.opened === true, JSON.stringify(settingsUi));
+  const traySettings = await openSettings().catch((err) => 'ERR ' + err.message);
+  add('托盘「设置…」→ 打开设置浮层', traySettings === true, 'openSettings=' + JSON.stringify(traySettings));
   add('拖拽区生效（.hdr = drag / .ftr-actions = no-drag）',
     injected && injected.drag === 'drag' && injected.noDrag === 'no-drag', JSON.stringify(injected));
 

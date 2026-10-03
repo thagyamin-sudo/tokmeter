@@ -65,7 +65,8 @@ export async function startCollector({ configFile = configPath, autostart = true
     return { ok: false, stage: 'config', message: err.message };
   }
 
-  const collector = mods.createCollector({ config, log });
+  // configFile 一并交给采集器：设置浮层的 POST /config 要写回同一个文件
+  const collector = mods.createCollector({ config, log, configPath: configFile });
   const server = createServer(collector.handler);
 
   const listened = await new Promise((resolve) => {

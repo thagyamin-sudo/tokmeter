@@ -34,7 +34,7 @@ Tokmeter 是一个纯粹的**观测面板**：它不代理推理、不改写你�
 
 ### 方式一：直接下载安装包（推荐给 Windows 用户）
 
-到 [Releases](https://github.com/thagyamin-sudo/tokmeter/releases/latest) 下载 **`Tokmeter-0.1.0-setup.exe`**（约 87.8 MB），双击安装。
+到 [Releases](https://github.com/thagyamin-sudo/tokmeter/releases/latest) 下载 **`Tokmeter-0.2.0-setup.exe`**（约 87.8 MB），双击安装。
 
 - 安装包是 NSIS 格式（`oneClick: false` + `perMachine: false`），**安装时可以自己选目录**，不需要管理员权限。
 - 自动创建桌面快捷方式与开始菜单项。
@@ -158,13 +158,42 @@ node collector.js D:/path/my-config.json # 也可以指定配置文件
 | 始终置顶（可勾选） | 写 `state.json`，立即生效 |
 | 切换视图 → 服务端 / 客户端 | 服务端 = 面板内置模拟引擎；客户端 = 连本机采集器 |
 | 开机自启（可勾选） | `app.setLoginItemSettings`，写 HKCU 注册表 Run 项 |
-| 打开配置文件 | 打开 `%APPDATA%\Tokmeter\collector.config.json` |
+| 设置… | 显示悬浮窗并打开**面板内设置浮层**（改 baseUrl / key / model / 探测间隔 / 转发 / 单价，不用手动编辑 JSON） |
+| 打开配置文件所在目录 | 在资源管理器里选中 `%APPDATA%\Tokmeter\collector.config.json` |
 | 退出 Tokmeter | 真正退出（关窗口只是收进托盘） |
 
 桌面版**内置采集器**（主进程内直接 import 采集器并监听 `127.0.0.1`），所以不需要另外开一个 `node collector.js`。
 首次运行会从模板生成 `%APPDATA%\Tokmeter\collector.config.json`，填好 key 后在托盘菜单里「切换视图 → 客户端」即可。
 
-### 4. URL 参数表
+### 4. 设置页（面板内浮层）
+
+不用改文件、不用重启：点**页脚第 4 个齿轮按钮**，或点**标题栏右侧的连接状态区**，设置页就会浮在面板上。
+
+![面板内设置页](ref/settings.png)
+
+*设置页：baseUrl / API Key（密码框里是脱敏值）/ model / 探测间隔 / 转发开关 / 两项单价，底部三个按钮*
+
+| 字段 | 说明 |
+| --- | --- |
+| 接口地址 `baseUrl` | OpenAI 兼容地址，必须以 `http://` 或 `https://` 开头 |
+| `API Key` | 密码框里显示的是**脱敏值**（如 `sk-***c3a3`）。**留空或保持原样 = 不改动**，只有重新输入才会覆盖 |
+| 模型 `model` | 不能为空 |
+| 探测间隔 | 毫秒，最小 `5000`（防烧钱下限） |
+| 兼容转发 | 对应配置里的 `proxy` |
+| 输入 / 输出单价 | 对应 `pricing.inPerM` / `pricing.outPerM`（美元 / 百万 token） |
+
+| 按钮 | 作用 |
+| --- | --- |
+| 测试连接 | 用表单里的 baseUrl / key / model **发一次最小流式请求**，就地显示 `TTFT xx ms · xx tok/s` 或失败原因（不写配置、不计入统计） |
+| 保存 | 校验（非法值给出中文提示，例如 `probeEveryMs 不得小于 5000`）→ 写回配置文件 → **热重启探测**（不用重启采集器或 Tokmeter） |
+| 关闭 | 收起浮层 |
+
+- 所有进行中状态与错误都**内联显示**，不会弹 alert 打断你。
+- 面板连不上采集器时，浮层里直接写：**「设置需要本机采集器（`node collector.js` 或桌面版）」**。
+- 桌面版：托盘菜单 **「设置…」** 会显示悬浮窗并打开这张浮层；旁边还有「打开配置文件所在目录」（在资源管理器里选中配置文件）。
+- 背后的 HTTP 接口（只监听 `127.0.0.1`，带 CORS）：`GET /config`（`apiKey` 只回末 4 位）、`POST /config`、`POST /config/test`。
+
+### 5. URL 参数表
 
 | 参数 | 取值 | 默认 | 说明 |
 | --- | --- | --- | --- |
@@ -177,7 +206,8 @@ node collector.js D:/path/my-config.json # 也可以指定配置文件
 | `tick` | 整数 | `0` | 测试模式下步进的帧数 |
 | `raf` | `1` | 关闭 | 测试模式下改走真实 `requestAnimationFrame` 渲染路径 |
 | `freeze` | `HH:MM:SS` | 关闭 | 冻结时钟，让输出可复现 |
-| `press` | `power,copy,refresh` | 空 | 测试模式下自动点击页脚按钮（逗号分隔） |
+| `config` | URL | 由 `endpoint` 推导，兜底 `http://127.0.0.1:8787` | 设置浮层要连的采集器根地址（桌面壳会显式带上本机端口） |
+| `press` | `power,copy,refresh,settings` | 空 | 测试模式下自动点击页脚按钮（逗号分隔） |
 | `inject` | `rate:<数值>` | 空 | 注入极端速率，验证数字变宽不挤坏 Hero 卡 |
 | `name` | 任意字符串 | 空 | 覆盖模型名，验证超长名称省略而不撑破标题区 |
 | `fail` | `stale` / `error` / `both` / `1` | 空 | 强制降级状态，验证异常时布局不塌陷 |
@@ -185,15 +215,16 @@ node collector.js D:/path/my-config.json # 也可以指定配置文件
 多个参数用 `&` 连接，例如：
 `llm-monitor.html?source=vllm&endpoint=http://127.0.0.1:8000/metrics&island=1`
 
-### 5. 页脚三个按钮
+### 6. 页脚四个按钮
 
-面板底部有三个图标按钮，从左到右：
+面板底部有四个图标按钮，从左到右：
 
 | 按钮 | 标题 | 作用 |
 | --- | --- | --- |
 | ⟳ 刷新 | 立即刷新 | 对当前数据源立刻拉一次数据（HTTP / vLLM / 采集器）；模拟引擎下只是给出视觉反馈。按下后有 900ms 高亮闪烁 |
 | ⧉ 复制 | 复制当前状态 | 把当前快照整理成一段纯文本摘要复制到剪贴板（以 `Tokmeter` 开头，含模型名、速率、请求、KV/GPU；客户端视图含 TTFT、探测次数、用量与成本，未知量显示 `--`）。`file://` 或权限不足时自动降级到 `execCommand('copy')` |
 | ⏻ 电源 | 暂停/恢复监测 | 暂停时停掉当前数据源（不再发任何请求），按钮转为关闭态；再按一次恢复轮询 |
+| ⚙ 设置 | 设置 | 打开面板内**设置浮层**（与点标题栏右侧的连接状态区同效）：改 baseUrl / API Key / model / 探测间隔 / 转发开关 / 两项单价，并可就地测试连接、保存后热重启探测 |
 
 ---
 
@@ -294,8 +325,9 @@ node collector.js D:/path/my-config.json # 也可以指定配置文件
 - **面板页面不含 key**：`llm-monitor.html` 是纯静态文件，里面没有任何密钥；浏览器拿 `?view=client` 时只向本机采集器要数据。
 - **`/snapshot` 绝不返回 key**：采集器只监听 `127.0.0.1`，且响应体里不含 `apiKey`（有测试覆盖）。
 - **转发时 key 由服务端注入**：`proxy: true` 时，客户端发来的请求头会被丢弃，key 由采集器进程加上去，前端拿不到。
-- **最小暴露面**：采集器只暴露 `GET /snapshot`、`GET /health`，以及（可选）`POST /v1/*`。
-- **只读跨域**：`/snapshot` 带 `Access-Control-Allow-Origin: *`，但它是只读接口、只监听本机、且不含任何密钥。
+- **最小暴露面**：采集器只暴露 `GET /snapshot`、`GET /health`、`GET /config`、`POST /config`、`POST /config/test`，以及（可选）`POST /v1/*`。
+- **写接口只信本机**：`/config` 与 `/config/test` 同样带 `Access-Control-Allow-Origin: *`，也就是说**本机上任何网页**都能改这份配置的 `baseUrl` / `model` / 转发开关 / 单价，并能让它发一次探测请求。所以：不要把 8787 端口转发或暴露到局域网/公网；多人共用的机器上，其他本机用户也能访问。
+- **key 是单向的**：读接口只回末 4 位（`sk-***c3a3`），写接口只能"换 key"不能"读 key"；提交空串、`***` 或脱敏值一律视为不改动，日志里也从不打印 key。
 - **提交前自检**：`git status --short` 里不应出现 `collector.config.json`。
 
 ---
@@ -316,13 +348,13 @@ node tools/shot.js --out=ref/mine.png        # 截图，用于与 ref/ 参考图
 
 | 验证项 | 命令 | 结果 |
 | --- | --- | --- |
-| 单元测试 | `node --test` | **91 / 91 通过**，0 失败，约 2.8 秒 |
-| 端到端探针 | `node tools/probe.js` | **98 / 98 断言通过**（视口 390×844，面板 358.8×521.89） |
-| 单文件探针 | `node tools/probe.js --target=llm-monitor.html` | **92 / 92 断言通过**（视口 504×805，面板 420×610.56） |
-| 单文件构建 | `node build.js` | 输出 `llm-monitor.html` 81,299 字节（79.4 KB），内联模块 11 个；重复构建 **SHA256 逐字节一致** |
-| 安装包 | `Tokmeter-0.1.0-setup.exe` | 92,069,277 字节（87.8 MB），SHA256 `9CDD7BAF…C5165F90` |
+| 单元测试 | `node --test` | **110 / 110 通过**，0 失败，约 2.8 秒 |
+| 端到端探针 | `node tools/probe.js` | **141 / 141 断言通过**（视口 390×844，面板 358.8×521.89） |
+| 单文件探针 | `node tools/probe.js --target=llm-monitor.html` | **135 / 135 断言通过**（视口 504×805，面板 420×610.56） |
+| 单文件构建 | `node build.js` | 输出 `llm-monitor.html` 102,443 字节（100.0 KB），内联模块 12 个；重复构建 **SHA256 逐字节一致** |
+| 安装包 | `Tokmeter-0.2.0-setup.exe` | 92,079,376 字节（87.8 MB），`VersionInfo.FileVersion = 0.2.0`，SHA256 `D7EE375A…48DC9BF` |
 
-单文件产物 SHA256：`70A5DCAF1AA9FD75CC2180C2F5A3568C34C662EE9C9DD447C449EB2674F670A3`
+单文件产物 SHA256：`30EAF39A310C5368F1B9EF5D9F88B1450F4D80929A4D21727109AAA67EEFEEAC`
 
 ### 与参考设计稿的一致性
 
@@ -350,13 +382,14 @@ src/units.js                  等比缩放单位
 src/store.js                  Snapshot 契约、环形缓冲、状态容器
 src/scheduler.js              渲染节流（每个动画帧最多重绘一次）
 src/render.js                 静态结构 + 每帧更新 + 探针采集
+src/settings.js               面板内设置浮层：GET/POST /config、/config/test，apiKey 脱敏回填
 src/sources/mock.js           模拟 vLLM 遥测引擎（可播种、确定性）
 src/sources/http.js           JSON 轮询 + 降级/退避 + transform 注入
 src/sources/vllm-metrics.js   Prometheus 文本解析与映射
 src/sources/client.js         客户端视图载荷映射
 collector.js                  采集器入口（node collector.js）
 collector/config.js           配置默认值 + 校验
-collector/server.js           HTTP 服务：/snapshot、/health、可选 /v1 转发
+collector/server.js           HTTP 服务：/snapshot、/health、/config、/config/test、可选 /v1 转发
 collector/openai-probe.js     OpenAI 流式响应测量（TTFT / tok/s）
 collector/stats.js            滑动窗口统计（P50/P95、成功率、用量、成本）
 collector.config.example.json 配置模板（含占位符 key）
@@ -364,8 +397,8 @@ build.js                      无依赖单文件构建
 tools/probe.js                E2E 探针
 tools/shot.js                 截图
 desktop/                      Windows 桌面版（Electron 外壳 + 内置采集器 + NSIS 安装包）
-tests/                        单元测试（91 个）
-ref/                          参考截图与比对产物
+tests/                        单元测试（110 个）
+ref/                          参考截图与比对产物（settings.png = 面板内设置页）
 ```
 
 ---

@@ -1,16 +1,25 @@
 /**
  * 采集器 · HTTP 服务：对外只暴露面板需要的东西。
  *
- *   GET /snapshot   → 客户端视图的数据（不含 apiKey）
- *   GET /health     → 存活探针
- *   POST /v1/*      → 可选：OpenAI 兼容转发（被动统计真实流量），key 由本进程注入
+ *   GET  /snapshot      → 客户端视图的数据（不含 apiKey）
+ *   GET  /health        → 存活探针
+ *   GET  /config        → 当前配置（apiKey 已脱敏，只留末 4 位）
+ *   POST /config        → 改配置（部分字段）→ 写回文件 → 热重启探测，不用重启进程
+ *   POST /config/test   → 用提交的 baseUrl/apiKey/model 试发一次最小流式请求（不写配置）
+ *   POST /v1/*          → 可选：OpenAI 兼容转发（被动统计真实流量），key 由本进程注入
  *
  * 主动探测：每 probeEveryMs 发一次小流式请求，量 TTFT / tok/s / 成功失败。
  * 串行执行（永不并发探测），避免把"排队等待"算成"模型慢"。
+ *
+ * 安全约定：apiKey 只在本进程内使用；日志、响应、探针数据里都不允许出现它。
  */
 import { createServer } from 'node:http';
 import { createStats } from './stats.js';
 import { measureOpenAiStream } from './openai-probe.js';
+import { isApiKeyUnchanged, maskApiKey, patchConfig, publicConfig, writeConfig } from './config.js';
+
+/** 请求体上限：配置就是几个字段，超过这个量级一定是发错了。 */
+const MAX_BODY_BYTES = 64 * 1024;
 
 /** 把 fetch 的响应体按行拆成 async 迭代器。 */
 async function* bodyLines(res) {
@@ -31,7 +40,39 @@ async function* bodyLines(res) {
   if (buf.trim() !== '') yield buf;
 }
 
-export function createCollector({ config, fetchImpl = fetch, now = () => Date.now(), log = () => {} }) {
+/** 从报错链里挖 errno：undici 会把真实原因塞进 cause / cause.errors[]。 */
+function errorCode(err) {
+  const seen = new Set();
+  const walk = (e, depth) => {
+    if (!e || typeof e !== 'object' || depth > 3 || seen.has(e)) return '';
+    seen.add(e);
+    if (typeof e.code === 'string' && e.code) return e.code;
+    if (Array.isArray(e.errors)) {
+      for (const sub of e.errors) {
+        const hit = walk(sub, depth + 1);
+        if (hit) return hit;
+      }
+    }
+    return walk(e.cause, depth + 1);
+  };
+  return walk(err, 0);
+}
+
+/** 网络类错误的可读化：fetch failed 单独看毫无信息量，把 errno 与下一步建议带出来。 */
+function describeFetchError(err, timeoutMs) {
+  const msg = err && err.message ? err.message : String(err);
+  const code = errorCode(err);
+  if (err && (err.name === 'TimeoutError' || /timeout/i.test(msg))) {
+    return '请求超时（超过 ' + timeoutMs + 'ms）：' + msg;
+  }
+  if (code === 'ECONNREFUSED') return '连不上上游（ECONNREFUSED）：检查 baseUrl 是否正确、服务是否在运行';
+  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') return '域名解析失败（' + code + '）：检查 baseUrl 的主机名';
+  if (/bad port/i.test(msg)) return '端口不合法（浏览器/fetch 规范禁止访问该端口）：检查 baseUrl 的端口';
+  if (code === 'CERT_HAS_EXPIRED' || code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE') return 'TLS 证书校验失败（' + code + '）';
+  return code ? msg + '（' + code + '）' : msg + '：检查 baseUrl 与网络';
+}
+
+export function createCollector({ config, fetchImpl = fetch, now = () => Date.now(), log = () => {}, configPath = null }) {
   const stats = createStats({ windowMs: 60000, pricing: config.pricing });
   let timer = null;
   let running = false;
@@ -114,8 +155,156 @@ export function createCollector({ config, fetchImpl = fetch, now = () => Date.no
       // 面板常以 file:// 或别的端口打开，必须放行跨域（只读接口、只监听本机、不含任何密钥）
       'access-control-allow-origin': '*',
       'access-control-allow-headers': 'content-type',
+      'access-control-allow-methods': 'GET,POST,OPTIONS',
     });
     res.end(text);
+  }
+
+  const fail = (res, code, message) => sendJson(res, code, { ok: false, error: { message } });
+
+  /** 读并解析 JSON 请求体；空体 = {}；超限/坏 JSON 抛出可读错误。 */
+  async function readJsonBody(req) {
+    const chunks = [];
+    let size = 0;
+    for await (const c of req) {
+      size += c.length;
+      if (size > MAX_BODY_BYTES) throw new Error('请求体过大（上限 ' + MAX_BODY_BYTES + ' 字节）');
+      chunks.push(c);
+    }
+    const text = Buffer.concat(chunks).toString('utf8').trim();
+    if (text === '') return {};
+    try {
+      const json = JSON.parse(text);
+      if (!json || typeof json !== 'object' || Array.isArray(json)) throw new Error('必须是 JSON 对象');
+      return json;
+    } catch (err) {
+      throw new Error('请求体不是合法 JSON：' + (err && err.message ? err.message : String(err)));
+    }
+  }
+
+  /** 当前配置的面板视图（apiKey 已脱敏）。 */
+  function configView() {
+    return publicConfig(config, { configPath });
+  }
+
+  /**
+   * 就地生效新配置。
+   * 必须原地改（而不是整体替换 config）：stats 捕获的是 config.pricing 这个**对象引用**，
+   * 换对象会让成本单价悄悄失效。
+   */
+  function applyConfig(next) {
+    if (!config.pricing || typeof config.pricing !== 'object') config.pricing = { inPerM: 0, outPerM: 0 };
+    config.pricing.inPerM = next.pricing.inPerM;
+    config.pricing.outPerM = next.pricing.outPerM;
+    for (const k of ['baseUrl', 'apiKey', 'model', 'probeEveryMs', 'probeMaxTokens', 'probePrompt', 'proxy', 'timeoutMs', 'port']) {
+      config[k] = next[k];
+    }
+  }
+
+  /** 热重启探测：换间隔、立刻按新配置探一次（不用重启进程）。 */
+  function restartProbing() {
+    if (timer !== null) clearInterval(timer);
+    timer = null;
+    status = 'connecting';
+    lastError = null;
+    if (running) {
+      timer = setInterval(() => probeOnce(), config.probeEveryMs);
+      void probeOnce();
+    }
+  }
+
+  /**
+   * 用提交的 baseUrl/apiKey/model 试发一次最小流式请求。
+   * 不写配置、不计入滚动统计（这是"能不能用"的体检，不是生产探测）。
+   */
+  async function testUpstream(patch) {
+    const p = patch && typeof patch === 'object' ? patch : {};
+    // 显式给了字段就按给的算（空串 = 用户清空了输入框 → 报错，而不是偷偷沿用旧值）
+    const pick = (key, fallback) =>
+      Object.prototype.hasOwnProperty.call(p, key) ? String(p[key] === null || p[key] === undefined ? '' : p[key]).trim() : String(fallback || '').trim();
+    const baseUrl = pick('baseUrl', config.baseUrl).replace(/\/+$/, '');
+    const model = pick('model', config.model);
+    const apiKey = isApiKeyUnchanged(p.apiKey) ? config.apiKey : p.apiKey;
+    if (!/^https?:\/\//.test(baseUrl)) {
+      return { code: 400, body: { ok: false, error: { message: 'baseUrl 必须以 http:// 或 https:// 开头' } } };
+    }
+    if (!model) return { code: 400, body: { ok: false, error: { message: 'model 不能为空' } } };
+
+    const started = now();
+    try {
+      const res = await fetchImpl(baseUrl + '/chat/completions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: 'Bearer ' + apiKey },
+        body: JSON.stringify({
+          model,
+          stream: true,
+          stream_options: { include_usage: true },
+          max_tokens: config.probeMaxTokens,
+          messages: [{ role: 'user', content: config.probePrompt }],
+        }),
+        signal: AbortSignal.timeout ? AbortSignal.timeout(config.timeoutMs) : undefined,
+      });
+      if (!res.ok) {
+        const detail = await res.text().catch(() => '');
+        const hint = res.status === 401 || res.status === 403 ? '（apiKey 不对或没权限）' : res.status === 404 ? '（baseUrl 或 model 不对）' : '';
+        return {
+          code: 200,
+          body: {
+            ok: false, model, ttftMs: null, tokPerSec: 0,
+            error: '上游 HTTP ' + res.status + hint + (detail ? '：' + detail.slice(0, 200) : ''),
+          },
+        };
+      }
+      const measured = await measureOpenAiStream(bodyLines(res), now, started);
+      return {
+        code: 200,
+        body: {
+          ok: true,
+          model,
+          ttftMs: Number.isFinite(measured.ttftMs) ? measured.ttftMs : null,
+          tokPerSec: Number.isFinite(measured.tokPerSec) ? Math.round(measured.tokPerSec * 100) / 100 : 0,
+          totalMs: measured.totalMs,
+          promptTokens: measured.promptTokens,
+          completionTokens: measured.completionTokens,
+          error: null,
+        },
+      };
+    } catch (err) {
+      return { code: 200, body: { ok: false, model, ttftMs: null, tokPerSec: 0, error: describeFetchError(err, config.timeoutMs) } };
+    }
+  }
+
+  /** POST /config：校验 → 写文件 → 生效 → 热重启。日志里绝不出现 apiKey。 */
+  async function updateConfig(req, res) {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (err) {
+      return fail(res, 400, err.message);
+    }
+    let next;
+    try {
+      next = patchConfig(config, body);
+    } catch (err) {
+      return fail(res, 400, err && err.message ? err.message : String(err));
+    }
+    const keyChanged = next.apiKey !== config.apiKey;
+    if (!configPath) {
+      return fail(res, 500, '采集器启动时没有配置文件路径，改不了配置：请用 node collector.js <配置文件> 启动');
+    }
+    try {
+      writeConfig(configPath, next);
+    } catch (err) {
+      return fail(res, 500, '写配置文件失败（' + configPath + '）：' + (err && err.message ? err.message : String(err)));
+    }
+    applyConfig(next);
+    restartProbing();
+    log(
+      '配置已更新并热重启探测：model=' + config.model + ' baseUrl=' + config.baseUrl +
+      ' probeEveryMs=' + config.probeEveryMs + ' proxy=' + config.proxy +
+      ' apiKey=' + (keyChanged ? '已更新' : '未改动（' + maskApiKey(config.apiKey) + '）')
+    );
+    return sendJson(res, 200, { ok: true, restarted: running, config: configView() });
   }
 
   /** 可选：OpenAI 兼容转发。key 只在服务端注入，客户端拿不到。 */
@@ -178,23 +367,45 @@ export function createCollector({ config, fetchImpl = fetch, now = () => Date.no
   }
 
   const handler = (req, res) => {
+    const path = String(req.url || '').split('?')[0];
     if (req.method === 'OPTIONS') {
       res.writeHead(204, {
         'access-control-allow-origin': '*',
         'access-control-allow-headers': 'content-type',
         'access-control-allow-methods': 'GET,POST,OPTIONS',
+        'access-control-max-age': '600',
       });
       return res.end();
     }
-    if (req.url === '/snapshot' || req.url === '/') return sendJson(res, 200, snapshotPayload());
-    if (req.url === '/health') return sendJson(res, 200, { ok: true, status });
-    if (config.proxy && req.url.startsWith('/v1/')) return void proxy(req, res);
+    if (path === '/snapshot' || path === '/') return sendJson(res, 200, snapshotPayload());
+    if (path === '/health') return sendJson(res, 200, { ok: true, status });
+    if (path === '/config') {
+      if (req.method === 'GET') return sendJson(res, 200, { ok: true, config: configView() });
+      if (req.method === 'POST') return void updateConfig(req, res);
+      return fail(res, 405, '只支持 GET / POST');
+    }
+    if (path === '/config/test') {
+      if (req.method !== 'POST') return fail(res, 405, '只支持 POST');
+      return void (async () => {
+        let body;
+        try {
+          body = await readJsonBody(req);
+        } catch (err) {
+          return fail(res, 400, err.message);
+        }
+        const result = await testUpstream(body);
+        return sendJson(res, result.code, result.body);
+      })();
+    }
+    if (config.proxy && path.startsWith('/v1/')) return void proxy(req, res);
     sendJson(res, 404, { error: { message: 'not found' } });
   };
 
   return {
     handler,
     snapshotPayload,
+    configView,
+    testUpstream,
     probeOnce,
     get status() {
       return status;

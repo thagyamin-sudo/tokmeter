@@ -6,6 +6,7 @@ import { applyUnit } from './units.js';
 import { createStore, emptySnapshot } from './store.js';
 import { initialSnapshot, stepSnapshot, createMockSource, mulberry32 } from './sources/mock.js';
 import { renderShell, paint, collectProbe, renderIsland } from './render.js';
+import { createSettings, configBaseFromEndpoint } from './settings.js';
 import { createScheduler } from './scheduler.js';
 import { createHttpSource } from './sources/http.js';
 import { parsePrometheus, toSnapshot, extractModelName } from './sources/vllm-metrics.js';
@@ -25,9 +26,10 @@ const view = params.get('view') === 'client' ? 'client' : 'server';
 
 const panel = document.getElementById('panel');
 
-/** 页脚三个按钮的真实行为：刷新 / 复制 / 暂停。 */
+/** 页脚四个按钮的真实行为：刷新 / 复制 / 暂停 / 设置。 */
 let activeSource = null;
 let paused = false;
+let settings = null;
 
 function flash(btn) {
   if (!btn) return;
@@ -69,6 +71,18 @@ function wireControls() {
   const refresh = document.getElementById('btn-refresh');
   const copyBtn = document.getElementById('btn-copy');
   const power = document.getElementById('btn-power');
+  const gear = document.getElementById('btn-settings');
+  if (gear) gear.addEventListener('click', () => { if (settings) settings.toggle ? settings.toggle() : settings.open(); });
+  // 标题栏右侧的连接状态区也是设置入口（点哪里都能打开同一张浮层）
+  const link = panel.querySelector('.hdr-link');
+  if (link) {
+    link.setAttribute('role', 'button');
+    link.setAttribute('tabindex', '0');
+    link.addEventListener('click', () => { if (settings) settings.open(); });
+    link.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); if (settings) settings.open(); }
+    });
+  }
   if (refresh) refresh.addEventListener('click', () => {
     if (activeSource && typeof activeSource.pollOnce === 'function') activeSource.pollOnce();
     flash(refresh);
@@ -99,6 +113,14 @@ addEventListener('orientationchange', layout);
 
 panel.dataset.view = view;
 renderShell(panel, view);
+/** 设置浮层：采集器根地址优先取 ?config=，否则从 snapshot 端点推（桌面壳会显式带上 ?config=）。 */
+settings = createSettings({
+  root: panel,
+  baseUrl: params.get('config') || configBaseFromEndpoint(params.get('endpoint')),
+  onSaved: () => {
+    if (activeSource && typeof activeSource.pollOnce === 'function') activeSource.pollOnce();
+  },
+});
 wireControls();
 if (params.get('island') === '1') renderIsland();   // 可选：灵动岛胶囊，默认关闭
 
@@ -117,12 +139,14 @@ function applyPress() {
   if (press.length === 0) return;
   stats.press = {};
   for (const name of press) {
-    const btn = document.getElementById('btn-' + name);
+    // 页脚按钮是 #btn-xxx；设置浮层里的按钮是 #set-xxx（press=settings,close 用来验证浮层能关掉）
+    const btn = document.getElementById('btn-' + name) || document.getElementById('set-' + name);
     if (!btn) continue;
     btn.click();
     if (name === 'power') stats.press.power = { paused: stats.paused === true, isOff: btn.classList.contains('is-off') };
     if (name === 'copy') stats.press.copy = { text: stats.copied || null };
     if (name === 'refresh') stats.press.refresh = { ok: true };
+    if (name === 'settings') stats.press.settings = { open: !!(settings && settings.isOpen()) };
   }
   store.update({});   // 探针在绘制时序列化，按键结果要再画一帧才带得出去
 }
@@ -149,6 +173,11 @@ function onUpdate(s) {
 }
 
 store.subscribe(onUpdate);
+
+// 测试模式：设置浮层的"读配置 / 测试连接"是异步的，完成时没有新的数据帧，
+// 探针就会停在"读取中"那一帧（实测：--dump-dom 抓到的是空提示）。
+// 这里按固定节奏把当前状态重写进 #probe，保证抓到的是异步结束之后的 DOM。
+if (testMode) setInterval(() => writeProbe(store.get()), 50);
 
 /** 客户端视图的确定性样本：数值固定，便于探针断言。 */
 function clientFixture(now, seedValue) {

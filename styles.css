@@ -40,6 +40,7 @@ body {
    面板内一切尺寸都写成 calc(var(--u) * N)，任何视口下比例都一致。 */
 .panel {
   --u: 3.9px;
+  position: relative;   /* 设置浮层用 absolute inset:0 盖在面板内部（不改变默认视图的任何尺寸） */
   width: min(92vw, 420px);
   background: var(--bg);
   border-radius: calc(var(--u) * 4.4);
@@ -94,6 +95,7 @@ body {
   font-size: calc(var(--u) * 3.2);
   font-weight: 700;
   white-space: nowrap;
+  cursor: pointer;      /* 连接状态区也是设置入口（见 src/app.js 的 wireControls） */
 }
 .chev {
   display: block;
@@ -365,6 +367,111 @@ button.ftr-icon {
 button.ftr-icon:hover { opacity: 0.7; }
 button.ftr-icon.is-off { color: var(--text-dim); opacity: 0.5; }   /* 已暂停 */
 button.ftr-icon.is-flash { color: var(--green); }                  /* 操作成功反馈 */
+
+/* ---------- 设置浮层（面板内，默认隐藏；点页脚齿轮或标题栏状态区打开） ---------- */
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 2.2);
+  padding: calc(var(--u) * 4);
+  border-radius: calc(var(--u) * 4.4);
+  background: rgba(22, 22, 24, 0.98);
+  overflow-y: auto;
+  -webkit-app-region: no-drag;
+}
+.overlay[hidden] { display: none; }
+.set-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: calc(var(--u) * 4);
+  font-weight: 700;
+}
+.set-note {
+  margin: 0;
+  font-size: calc(var(--u) * 2.9);
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--orange);
+}
+.set-note[hidden] { display: none; }
+.set-row {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 0.9);
+  font-size: calc(var(--u) * 2.7);
+  font-weight: 700;
+  color: var(--text-dim);
+}
+.set-row-check {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--u) * 2);
+  color: var(--text);
+}
+.set-row input[type="text"],
+.set-row input[type="password"],
+.set-row input[type="number"] {
+  width: 100%;
+  padding: calc(var(--u) * 1.6) calc(var(--u) * 2);
+  border: calc(var(--u) * 0.25) solid var(--track);
+  border-radius: calc(var(--u) * 1.8);
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  font-size: calc(var(--u) * 3);
+  -webkit-app-region: no-drag;
+}
+.set-row input:disabled { opacity: 0.5; }
+.set-row input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: calc(var(--u) * 4.2);
+  height: calc(var(--u) * 4.2);
+  accent-color: var(--green);
+  -webkit-app-region: no-drag;
+}
+.set-actions {
+  display: flex;
+  gap: calc(var(--u) * 1.8);
+  margin-top: auto;
+  padding-top: calc(var(--u) * 1.6);
+}
+.set-btn {
+  flex: 1 1 0;
+  padding: calc(var(--u) * 1.9) 0;
+  border: calc(var(--u) * 0.25) solid var(--track);
+  border-radius: calc(var(--u) * 2.2);
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  font-size: calc(var(--u) * 2.9);
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+.set-btn:disabled { opacity: 0.45; cursor: default; }
+.set-primary { background: var(--green); border-color: transparent; color: #0b1a0e; }
+.set-status {
+  margin: 0;
+  min-height: calc(var(--u) * 3.2);
+  font-size: calc(var(--u) * 2.7);
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--green);
+}
+.set-error {
+  margin: 0;
+  font-size: calc(var(--u) * 2.7);
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--orange);
+  word-break: break-word;
+}
+.set-error[hidden] { display: none; }
 
 /* 可选：灵动岛样式的胶囊（?island=1） */
 .island {

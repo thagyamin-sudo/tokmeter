@@ -22,6 +22,8 @@ const ICONS = {
   gauge: '<svg viewBox="0 0 16 16" width="100%" height="100%"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 4.2v1.6M8 10.2v1.6M4.2 8h1.6M10.2 8h1.6M5.3 5.3l1.1 1.1M9.6 9.6l1.1 1.1M10.7 5.3 9.6 6.4M6.4 9.6 5.3 10.7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
   cloud: '<svg viewBox="0 0 16 16" width="100%" height="100%"><path d="M4.6 12.4h6.9a2.6 2.6 0 0 0 .3-5.2 3.8 3.8 0 0 0-7.3-.9A2.9 2.9 0 0 0 4.6 12.4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>',
   doc: '<svg viewBox="0 0 16 16" width="100%" height="100%"><path d="M4 1.9h5l3 3v9.2H4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M6.2 8.2h3.6M6.2 10.6h3.6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
+  // 设置齿轮（viewBox 24：与 Feather settings 的路径一致，缩放后与其余图标等大）
+  gear: '<svg viewBox="0 0 24 24" width="100%" height="100%"><circle cx="12" cy="12" r="3.1" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
 };
 export { ICONS };
 
@@ -197,6 +199,7 @@ export function renderShell(root, view = 'server') {
     '    <button type="button" class="ftr-icon" id="btn-refresh" title="立即刷新" aria-label="立即刷新">' + ICONS.refresh + '</button>',
     '    <button type="button" class="ftr-icon" id="btn-copy" title="复制当前状态" aria-label="复制当前状态">' + ICONS.copy + '</button>',
     '    <button type="button" class="ftr-icon" id="btn-power" title="暂停/恢复监测" aria-label="暂停/恢复监测">' + ICONS.power + '</button>',
+    '    <button type="button" class="ftr-icon" id="btn-settings" title="设置" aria-label="设置">' + ICONS.gear + '</button>',
     '  </div>',
     '</footer>',
   ].join('\n');
@@ -463,11 +466,68 @@ export function collectProbe(root, s, stats) {
       },
     },
     dim: root.classList.contains('is-degraded'),
-    // 页脚三个按钮必须真的存在且可用（曾经只是装饰图标）
+    // 设置浮层：默认必须隐藏（不能盖住默认视图），点了齿轮才出现
+    settings: (() => {
+      const box = root.querySelector('#settings-overlay');
+      const q = (id) => root.querySelector('#' + id);
+      const has = (id) => !!q(id);
+      const note = q('set-notice');
+      const err = q('set-error');
+      const key = q('set-apikey');
+      const flag = (id) => { const n = q(id); return n ? !!n.disabled : null; };
+      return {
+        present: !!box,
+        hidden: box ? !!box.hidden : null,
+        open: box ? !box.hidden : false,
+        title: textOf(root, '#set-title'),
+        notice: textOf(root, '#set-notice'),
+        noticeHidden: note ? !!note.hidden : null,
+        status: textOf(root, '#set-status'),
+        error: textOf(root, '#set-error'),
+        errorHidden: err ? !!err.hidden : null,
+        // 字段必须齐全：对应采集器的 baseUrl / apiKey / model / probeEveryMs / proxy / pricing
+        fields: {
+          baseUrl: has('set-baseurl'),
+          apiKey: has('set-apikey'),
+          apiKeyPassword: key ? key.type === 'password' : false,
+          apiKeyPlaceholder: key ? key.placeholder : null,
+          model: has('set-model'),
+          probeEveryMs: has('set-interval'),
+          proxy: has('set-proxy'),
+          priceIn: has('set-in-perm'),
+          priceOut: has('set-out-perm'),
+        },
+        buttons: { test: has('set-test'), save: has('set-save'), close: has('set-close') },
+        disabled: { test: flag('set-test'), save: flag('set-save') },
+      };
+    })(),
+    // 页脚四个按钮必须真的存在且可用（曾经只是装饰图标）
     controls: {
       refresh: !!root.querySelector('#btn-refresh'),
       copy: !!root.querySelector('#btn-copy'),
       power: !!root.querySelector('#btn-power'),
+      settings: !!root.querySelector('#btn-settings'),
+      // 几何：加第 4 个齿轮最容易踩的坑是"把其余三个挤小/挤换行"，所以逐个量出来按 u 断言
+      geometry: (() => {
+        const ftr = root.querySelector('.ftr');
+        const fr = ftr ? ftr.getBoundingClientRect() : null;
+        const box = (id) => {
+          const n = root.querySelector('#' + id);
+          if (!n) return null;
+          const r = n.getBoundingClientRect();
+          return { x: r2(r.left), right: r2(r.right), w: r2(r.width), h: r2(r.height) };
+        };
+        const unit = parseFloat(getComputedStyle(root).getPropertyValue('--u'));
+        return {
+          unit: Number.isFinite(unit) ? r2(unit) : null,
+          refresh: box('btn-refresh'),
+          copy: box('btn-copy'),
+          power: box('btn-power'),
+          settings: box('btn-settings'),
+          footerLeft: fr ? r2(fr.left) : null,
+          footerRight: fr ? r2(fr.right) : null,
+        };
+      })(),
       press: { ...((stats && stats.press) || {}) },   // 按键结果放在 press 里，别覆盖上面的存在性标记
     },
     degrade: { staleLink: (stats && stats.staleLink) || null, staleDim: !!(stats && stats.staleDim) },

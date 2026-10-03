@@ -35,7 +35,7 @@ Tokmeter は純粋な**観測パネル**です。推論をプロキシせず、�
 
 ### 方法 1：インストーラーをダウンロード（Windows ユーザーに推奨）
 
-[Releases](https://github.com/thagyamin-sudo/tokmeter/releases/latest) から **`Tokmeter-0.1.0-setup.exe`**（約 87.8 MB）をダウンロードしてダブルクリックします。
+[Releases](https://github.com/thagyamin-sudo/tokmeter/releases/latest) から **`Tokmeter-0.2.0-setup.exe`**（約 87.8 MB）をダウンロードしてダブルクリックします。
 
 - NSIS 形式（`oneClick: false` + `perMachine: false`）のため、**インストール先を自分で選べます**。管理者権限も不要です。
 - デスクトップのショートカットとスタートメニュー項目を自動作成します。
@@ -161,14 +161,43 @@ node collector.js D:/path/my-config.json  # 別の設定ファイルを指定す
 | 常に最前面（チェック可能） | `state.json` に書き込み、即時反映 |
 | ビュー切替 → サーバー／クライアント | サーバー＝パネル内蔵シミュレーター、クライアント＝ローカルコレクターに接続 |
 | スタートアップ時に起動（チェック可能） | `app.setLoginItemSettings`、HKCU の Run キーに書き込み |
-| 設定ファイルを開く | `%APPDATA%\Tokmeter\collector.config.json` を開く |
+| 設定… | フローティングウィンドウを表示し、**パネル内の設定オーバーレイ**を開きます（baseUrl / key / model / プローブ間隔 / 転送 / 単価。JSON を手で編集する必要はありません） |
+| 設定ファイルのフォルダーを開く | エクスプローラーで `%APPDATA%\Tokmeter\collector.config.json` を選択表示 |
 | Tokmeter を終了 | 本当に終了（ウィンドウを閉じてもトレイに残るだけ） |
 
 デスクトップ版は**コレクターを内蔵**しているため（メインプロセスが直接 import し `127.0.0.1` で待ち受け）、
 別途 `node collector.js` を起動する必要はありません。初回起動時にテンプレートから
 `%APPDATA%\Tokmeter\collector.config.json` を生成します。キーを記入し、トレイメニューの「ビュー切替 → クライアント」を選ぶだけです。
 
-### 4. URL パラメータ一覧
+### 4. 設定ページ（パネル内オーバーレイ）
+
+ファイルを編集せず、再起動も不要：**フッターの 4 番目の歯車ボタン**、または**ヘッダー右側の接続状態エリア**をクリックすると、パネルの上に設定ページが表示されます。
+
+![パネル内の設定ページ](ref/settings.png)
+
+*設定ページ：baseUrl / API Key（パスワード欄はマスク値）/ model / プローブ間隔 / 転送スイッチ / 2 つの単価、下部に 3 つのボタン*
+
+| 項目 | 説明 |
+| --- | --- |
+| `baseUrl` | OpenAI 互換のアドレス。`http://` または `https://` で始まる必要があります |
+| `API Key` | パスワード欄に表示されるのは**マスク値**（例 `sk-***c3a3`）。**空のまま／そのままなら変更なし**で、新しく入力したときだけ上書きされます |
+| `model` | 空にはできません |
+| プローブ間隔 | ミリ秒、最小 `5000`（浪費を防ぐ下限） |
+| 互換転送 | 設定の `proxy` に対応 |
+| 入力／出力単価 | `pricing.inPerM` / `pricing.outPerM` に対応（米ドル／100 万トークン） |
+
+| ボタン | 動作 |
+| --- | --- |
+| 接続テスト | フォームの baseUrl / key / model で**最小のストリーミング要求を 1 回**送り、`TTFT xx ms · xx tok/s` または失敗理由をその場に表示します（設定は書かず、統計にも入れません） |
+| 保存 | 検証（不正値は中国語のメッセージ。例 `probeEveryMs 不得小于 5000`）→ 設定ファイルへ書き戻し → **プローブをホット再起動**（コレクターや Tokmeter の再起動は不要） |
+| 閉じる | オーバーレイを閉じます |
+
+- 進行中の状態もエラーもすべて**インライン表示**で、alert は使いません。
+- コレクターに接続できないときは、オーバーレイに **「设置需要本机采集器（`node collector.js` 或桌面版）」**（ローカルコレクターが必要）と表示されます。
+- デスクトップ版：トレイメニューの **「設定…」** がフローティングウィンドウを表示してこのオーバーレイを開きます。隣の **「設定ファイルのフォルダーを開く」** はエクスプローラーで設定ファイルを選択表示します。
+- 背後の HTTP エンドポイント（`127.0.0.1` のみ待ち受け、CORS 対応）：`GET /config`（`apiKey` は末尾 4 文字のみ）、`POST /config`、`POST /config/test`。
+
+### 5. URL パラメータ一覧
 
 | パラメータ | 値 | 既定 | 説明 |
 | --- | --- | --- | --- |
@@ -181,7 +210,8 @@ node collector.js D:/path/my-config.json  # 別の設定ファイルを指定す
 | `tick` | 整数 | `0` | テストモードで進めるフレーム数 |
 | `raf` | `1` | オフ | テストモードで実際の `requestAnimationFrame` 経路を使う |
 | `freeze` | `HH:MM:SS` | オフ | 時計を固定し、出力を再現可能にする |
-| `press` | `power,copy,refresh` | 空 | テストモードでフッターボタンを自動クリック（カンマ区切り） |
+| `press` | `power,copy,refresh,settings` | 空 | テストモードでフッターボタンを自動クリック（カンマ区切り） |
+| `config` | URL | `endpoint` から推定、既定は `http://127.0.0.1:8787` | 設定オーバーレイが接続するコレクターのルート（デスクトップ版はローカルポートを明示的に渡します） |
 | `inject` | `rate:<数値>` | 空 | 極端なレートを注入し、桁が増えてもヒーローカードが崩れないことを検証 |
 | `name` | 任意の文字列 | 空 | モデル名を上書きし、長い名前が省略されてヘッダーを壊さないことを検証 |
 | `fail` | `stale` / `error` / `both` / `1` | 空 | 強制的にデグレード状態にし、レイアウトが崩れないことを検証 |
@@ -189,15 +219,16 @@ node collector.js D:/path/my-config.json  # 別の設定ファイルを指定す
 複数のパラメータは `&` で連結します。例：
 `llm-monitor.html?source=vllm&endpoint=http://127.0.0.1:8000/metrics&island=1`
 
-### 5. フッターの 3 ボタン
+### 6. フッターの 4 ボタン
 
-パネル下部に 3 つのアイコンボタンがあります（左から順に）：
+パネル下部に 4 つのアイコンボタンがあります（左から順に）：
 
 | ボタン | タイトル | 動作 |
 | --- | --- | --- |
 | ⟳ 更新 | 即時更新 | 現在のデータソースから直ちに 1 回取得します（HTTP／vLLM／コレクター）。シミュレーターでは視覚的なフィードバックのみ。押すと 900 ms ハイライトされます |
 | ⧉ コピー | 現在の状態をコピー | 現在のスナップショットをプレーンテキストに整形してクリップボードへコピーします（先頭は `Tokmeter`。モデル名・レート・リクエスト・KV/GPU を含み、クライアントビューでは TTFT・プローブ回数・使用量・コストも含みます。不明値は `--`）。`file://` や権限不足時は `execCommand('copy')` に自動フォールバックします |
 | ⏻ 電源 | 監視の一時停止／再開 | 一時停止中はデータソースを完全に停止し（以降リクエストを送信しません）、ボタンがオフ状態になります。もう一度押すとポーリングを再開します |
+| ⚙ 設定 | 設定 | パネル内の**設定オーバーレイ**を開きます（ヘッダー右側の接続状態エリアをクリックするのと同じ）。baseUrl / API Key / model / プローブ間隔 / 転送スイッチ / 2 つの単価を変更でき、その場で接続テスト、保存後はプローブをホット再起動します |
 
 ---
 
@@ -298,8 +329,9 @@ node collector.js D:/path/my-config.json  # 別の設定ファイルを指定す
 - **パネルページにキーは含まれない**：`llm-monitor.html` は純粋な静的ファイルで、秘密情報は一切含まれません。`?view=client` のときブラウザはローカルコレクターにデータを求めるだけです。
 - **`/snapshot` はキーを返さない**：コレクターは `127.0.0.1` のみで待ち受け、応答本文に `apiKey` を含みません（テストでカバー）。
 - **転送時はキーをサーバー側で付与**：`proxy: true` のとき、クライアントが送ったヘッダーは破棄され、キーはコレクタープロセスが付与するためフロントエンドには渡りません。
-- **最小の露出面**：コレクターが公開するのは `GET /snapshot`、`GET /health`、そして（任意の）`POST /v1/*` のみです。
-- **読み取り専用の CORS**：`/snapshot` は `Access-Control-Allow-Origin: *` を返しますが、読み取り専用・ローカルホスト限定・秘密情報なしのエンドポイントです。
+- **最小の露出面**：コレクターが公開するのは `GET /snapshot`、`GET /health`、`GET /config`、`POST /config`、`POST /config/test`、そして（任意の）`POST /v1/*` です。
+- **書き込み系はこのマシン限定の信頼**：`/config` と `/config/test` も `Access-Control-Allow-Origin: *` を返すため、**このマシン上の任意のページ**が `baseUrl` / `model` / 転送スイッチ / 単価を書き換え、プローブを 1 回実行させることができます。したがって 8787 番ポートを LAN やインターネットへ転送・公開しないでください。共用マシンでは他のローカルユーザーも到達できます。
+- **キーは一方向**：読み取り系は末尾 4 文字（`sk-***c3a3`）のみを返し、書き込み系はキーを「差し替える」ことはできても「読み出す」ことはできません。空文字・`***`・マスク値はいずれも「変更しない」を意味し、ログにもキーは出ません。
 - **コミット前の自己チェック**：`git status --short` に `collector.config.json` が現れてはいけません。
 
 ---
@@ -320,13 +352,13 @@ node tools/shot.js --out=ref/mine.png           # スクリーンショット（
 
 | 検証項目 | コマンド | 結果 |
 | --- | --- | --- |
-| ユニットテスト | `node --test` | **91 / 91 合格**、失敗 0、約 2.8 秒 |
-| E2E プローブ | `node tools/probe.js` | **98 / 98 の検証項目に合格**（ビューポート 390×844、パネル 358.8×521.89） |
-| 単一ファイルプローブ | `node tools/probe.js --target=llm-monitor.html` | **92 / 92 の検証項目に合格**（ビューポート 504×805、パネル 420×610.56） |
-| 単一ファイルビルド | `node build.js` | `llm-monitor.html` 81,299 バイト（79.4 KB）、インライン化モジュール 11 個。再ビルドは **SHA256 がバイト単位で一致** |
-| インストーラー | `Tokmeter-0.1.0-setup.exe` | 92,069,277 バイト（87.8 MB）、SHA256 `9CDD7BAF…C5165F90` |
+| ユニットテスト | `node --test` | **110 / 110 合格**、失敗 0、約 2.8 秒 |
+| E2E プローブ | `node tools/probe.js` | **141 / 141 の検証項目に合格**（ビューポート 390×844、パネル 358.8×521.89） |
+| 単一ファイルプローブ | `node tools/probe.js --target=llm-monitor.html` | **135 / 135 の検証項目に合格**（ビューポート 504×805、パネル 420×610.56） |
+| 単一ファイルビルド | `node build.js` | `llm-monitor.html` 102,443 バイト（100.0 KB）、インライン化モジュール 12 個。再ビルドは **SHA256 がバイト単位で一致** |
+| インストーラー | `Tokmeter-0.2.0-setup.exe` | 92,079,376 バイト（87.8 MB）、`VersionInfo.FileVersion = 0.2.0`、SHA256 `D7EE375A…48DC9BF` |
 
-単一ファイル成果物の SHA256：`70A5DCAF1AA9FD75CC2180C2F5A3568C34C662EE9C9DD447C449EB2674F670A3`
+単一ファイル成果物の SHA256：`30EAF39A310C5368F1B9EF5D9F88B1450F4D80929A4D21727109AAA67EEFEEAC`
 
 ### 参考デザインとの一致
 
@@ -354,13 +386,14 @@ src/units.js                  等比スケーリング単位
 src/store.js                  Snapshot 契約、リングバッファ、状態コンテナ
 src/scheduler.js              レンダリング間引き（1 アニメーションフレームにつき最大 1 回再描画）
 src/render.js                 静的構造＋フレームごとの更新＋プローブ収集
+src/settings.js               パネル内設定オーバーレイ：GET/POST /config、/config/test、apiKey はマスク値で往復
 src/sources/mock.js           模擬 vLLM テレメトリエンジン（シード可能・決定論的）
 src/sources/http.js           JSON ポーリング＋デグレード／バックオフ＋transform 注入
 src/sources/vllm-metrics.js   Prometheus テキストの解析とマッピング
 src/sources/client.js         クライアントビューのペイロードマッピング
 collector.js                  コレクターのエントリ（node collector.js）
 collector/config.js           設定の既定値＋検証
-collector/server.js           HTTP サービス：/snapshot、/health、任意の /v1 転送
+collector/server.js           HTTP サービス：/snapshot、/health、/config、/config/test、任意の /v1 転送
 collector/openai-probe.js     OpenAI ストリーミング応答の計測（TTFT / tok/s）
 collector/stats.js            スライディングウィンドウ統計（P50/P95、成功率、使用量、コスト）
 collector.config.example.json 設定テンプレート（プレースホルダのキー）
@@ -368,7 +401,7 @@ build.js                      依存なしの単一ファイルビルド
 tools/probe.js                E2E プローブ
 tools/shot.js                 スクリーンショット
 desktop/                      Windows デスクトップ版（Electron シェル＋内蔵コレクター＋NSIS インストーラー）
-tests/                        ユニットテスト（91 件）
+tests/                        ユニットテスト（110 件）
 ref/                          参考スクリーンショットと比較用成果物
 ```
 

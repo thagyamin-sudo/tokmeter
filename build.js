@@ -32,6 +32,7 @@ export const MODULES = [
   'src/sources/http.js',
   'src/sources/client.js',
   'src/render.js',
+  'src/settings.js',
   'src/scheduler.js',
   'src/app.js',
 ];

@@ -35,7 +35,7 @@ Tokmeter는 순수한 **관측 패널**입니다. 추론을 프록시하지 않�
 
 ### 방법 1 — 설치 프로그램 다운로드 (Windows 사용자 권장)
 
-[Releases](https://github.com/thagyamin-sudo/tokmeter/releases/latest)에서 **`Tokmeter-0.1.0-setup.exe`**(약 87.8 MB)를 받아 더블클릭하세요.
+[Releases](https://github.com/thagyamin-sudo/tokmeter/releases/latest)에서 **`Tokmeter-0.2.0-setup.exe`**(약 87.8 MB)를 받아 더블클릭하세요.
 
 - NSIS 형식(`oneClick: false` + `perMachine: false`)이라 **설치 경로를 직접 고를 수 있고**, 관리자 권한도 필요 없습니다.
 - 바탕 화면 바로 가기와 시작 메뉴 항목을 자동으로 만듭니다.
@@ -160,14 +160,43 @@ node collector.js D:/path/my-config.json  # 다른 설정 파일을 지정할 �
 | 항상 위(체크 가능) | `state.json`에 기록, 즉시 반영 |
 | 뷰 전환 → 서버 / 클라이언트 | 서버 = 패널 내장 시뮬레이터, 클라이언트 = 로컬 수집기에 연결 |
 | 시작 시 자동 실행(체크 가능) | `app.setLoginItemSettings`, HKCU Run 키에 기록 |
-| 설정 파일 열기 | `%APPDATA%\Tokmeter\collector.config.json` 열기 |
+| 설정… | 플로팅 창을 표시하고 **패널 내 설정 오버레이**를 엽니다(baseUrl / key / model / 프로브 간격 / 전달 / 단가. JSON을 직접 편집할 필요 없음) |
+| 설정 파일 폴더 열기 | 탐색기에서 `%APPDATA%\Tokmeter\collector.config.json`을 선택해 표시 |
 | Tokmeter 종료 | 실제로 종료(창을 닫으면 트레이로 숨겨질 뿐) |
 
 데스크톱 빌드는 **수집기를 내장**하므로(메인 프로세스가 직접 import해 `127.0.0.1`에서 대기),
 `node collector.js`를 따로 실행할 필요가 없습니다. 첫 실행 시 템플릿에서
 `%APPDATA%\Tokmeter\collector.config.json`을 생성합니다. 키를 채우고 트레이 메뉴에서 "뷰 전환 → 클라이언트"를 고르면 됩니다.
 
-### 4. URL 파라미터 목록
+### 4. 설정 페이지(패널 내 오버레이)
+
+파일을 고치거나 다시 시작할 필요 없이, **하단 네 번째 톱니바퀴 버튼**을 누르거나 **헤더 오른쪽의 연결 상태 영역**을 누르면 패널 위에 설정 페이지가 나타납니다.
+
+![패널 안의 설정 페이지](ref/settings.png)
+
+*설정 페이지: baseUrl / API Key(비밀번호 칸에는 마스킹된 값) / model / 프로브 간격 / 전달 스위치 / 두 단가, 아래에 버튼 3개*
+
+| 항목 | 설명 |
+| --- | --- |
+| `baseUrl` | OpenAI 호환 주소. `http://` 또는 `https://`로 시작해야 합니다 |
+| `API Key` | 비밀번호 칸에 보이는 것은 **마스킹된 값**(예: `sk-***c3a3`)입니다. **비워 두거나 그대로 두면 변경되지 않으며**, 새로 입력할 때만 덮어씁니다 |
+| `model` | 비워 둘 수 없습니다 |
+| 프로브 간격 | 밀리초, 최소 `5000`(비용 폭주 방지 하한) |
+| 호환 전달 | 설정의 `proxy`에 대응 |
+| 입력/출력 단가 | `pricing.inPerM` / `pricing.outPerM`에 대응(미국 달러 / 100만 토큰) |
+
+| 버튼 | 동작 |
+| --- | --- |
+| 연결 테스트 | 폼의 baseUrl / key / model로 **최소 스트리밍 요청을 한 번** 보내고 `TTFT xx ms · xx tok/s` 또는 실패 사유를 그 자리에 표시합니다(설정을 쓰지 않고 통계에도 넣지 않습니다) |
+| 저장 | 검증(잘못된 값은 중국어 메시지, 예: `probeEveryMs 不得小于 5000`) → 설정 파일에 기록 → **프로브 핫 재시작**(수집기나 Tokmeter를 다시 시작할 필요 없음) |
+| 닫기 | 오버레이를 닫습니다 |
+
+- 진행 중 상태와 오류는 모두 **인라인**으로 표시하며 alert를 쓰지 않습니다.
+- 수집기에 연결할 수 없으면 오버레이에 **「设置需要本机采集器（`node collector.js` 或桌面版）」**(로컬 수집기 필요)라고 표시됩니다.
+- 데스크톱 빌드: 트레이 메뉴 **"설정…"**이 플로팅 창을 띄우고 이 오버레이를 엽니다. 옆의 **"설정 파일 폴더 열기"**는 탐색기에서 설정 파일을 선택해 보여 줍니다.
+- 뒤에서 쓰는 HTTP 엔드포인트(`127.0.0.1`에만 바인딩, CORS 허용): `GET /config`(`apiKey`는 끝 4자리만), `POST /config`, `POST /config/test`.
+
+### 5. URL 파라미터 목록
 
 | 파라미터 | 값 | 기본값 | 설명 |
 | --- | --- | --- | --- |
@@ -180,7 +209,8 @@ node collector.js D:/path/my-config.json  # 다른 설정 파일을 지정할 �
 | `tick` | 정수 | `0` | 테스트 모드에서 진행할 프레임 수 |
 | `raf` | `1` | 꺼짐 | 테스트 모드에서 실제 `requestAnimationFrame` 렌더 경로 사용 |
 | `freeze` | `HH:MM:SS` | 꺼짐 | 시계를 고정해 출력을 재현 가능하게 함 |
-| `press` | `power,copy,refresh` | 비어 있음 | 테스트 모드에서 하단 버튼을 자동 클릭(쉼표 구분) |
+| `press` | `power,copy,refresh,settings` | 비어 있음 | 테스트 모드에서 하단 버튼을 자동 클릭(쉼표 구분) |
+| `config` | URL | `endpoint`에서 유도, 기본값 `http://127.0.0.1:8787` | 설정 오버레이가 연결할 수집기 루트(데스크톱 셸은 로컬 포트를 명시적으로 전달) |
 | `inject` | `rate:<숫자>` | 비어 있음 | 극단적인 속도를 주입해 자릿수가 커져도 히어로 카드가 깨지지 않는지 검증 |
 | `name` | 임의 문자열 | 비어 있음 | 모델 이름을 덮어써 긴 이름이 생략되고 헤더가 깨지지 않는지 검증 |
 | `fail` | `stale` / `error` / `both` / `1` | 비어 있음 | 강제로 성능 저하 상태를 만들어 레이아웃이 무너지지 않는지 검증 |
@@ -188,15 +218,16 @@ node collector.js D:/path/my-config.json  # 다른 설정 파일을 지정할 �
 여러 파라미터는 `&`로 연결합니다. 예:
 `llm-monitor.html?source=vllm&endpoint=http://127.0.0.1:8000/metrics&island=1`
 
-### 5. 하단 버튼 3개
+### 6. 하단 버튼 4개
 
-패널 아래쪽에 아이콘 버튼 3개가 있습니다(왼쪽부터):
+패널 아래쪽에 아이콘 버튼 4개가 있습니다(왼쪽부터):
 
 | 버튼 | 제목 | 동작 |
 | --- | --- | --- |
 | ⟳ 새로고침 | 즉시 새로고침 | 현재 데이터 소스에서 즉시 한 번 가져옵니다(HTTP / vLLM / 수집기). 시뮬레이터에서는 시각적 피드백만 제공합니다. 누르면 900ms 동안 강조 표시됩니다 |
 | ⧉ 복사 | 현재 상태 복사 | 현재 스냅샷을 일반 텍스트로 정리해 클립보드에 복사합니다(`Tokmeter`로 시작하며 모델·속도·요청·KV/GPU 포함, 클라이언트 뷰에서는 TTFT·프로브 횟수·사용량·비용도 포함. 알 수 없는 값은 `--`). `file://`이거나 권한이 없으면 `execCommand('copy')`로 자동 대체합니다 |
 | ⏻ 전원 | 모니터링 일시정지/재개 | 일시정지 중에는 데이터 소스를 완전히 멈춥니다(이후 요청을 보내지 않음). 버튼이 꺼진 상태로 바뀌고, 다시 누르면 폴링을 재개합니다 |
+| ⚙ 설정 | 설정 | 패널 내 **설정 오버레이**를 엽니다(헤더 오른쪽 연결 상태 영역을 누르는 것과 동일). baseUrl / API Key / model / 프로브 간격 / 전달 스위치 / 두 단가를 바꿀 수 있고, 그 자리에서 연결 테스트, 저장 후 프로브 핫 재시작 |
 
 ---
 
@@ -297,8 +328,9 @@ node collector.js D:/path/my-config.json  # 다른 설정 파일을 지정할 �
 - **패널 페이지에 키 없음**: `llm-monitor.html`은 비밀 정보가 전혀 없는 순수 정적 파일입니다. `?view=client`일 때 브라우저는 로컬 수집기에 데이터를 요청할 뿐입니다.
 - **`/snapshot`은 키를 반환하지 않음**: 수집기는 `127.0.0.1`에서만 대기하며 응답 본문에 `apiKey`가 없습니다(테스트로 검증).
 - **전달 시 키는 서버 측에서 주입**: `proxy: true`일 때 클라이언트가 보낸 헤더는 버려지고 키는 수집기 프로세스가 붙이므로 프런트엔드는 볼 수 없습니다.
-- **최소 노출 면적**: 수집기는 `GET /snapshot`, `GET /health`, 그리고 (선택적) `POST /v1/*`만 노출합니다.
-- **읽기 전용 CORS**: `/snapshot`은 `Access-Control-Allow-Origin: *`를 보내지만, 읽기 전용이고 로컬호스트에만 바인딩되며 비밀 정보가 없는 엔드포인트입니다.
+- **최소 노출 면적**: 수집기는 `GET /snapshot`, `GET /health`, `GET /config`, `POST /config`, `POST /config/test`, 그리고 (선택적) `POST /v1/*`를 노출합니다.
+- **쓰기 엔드포인트는 이 머신만 신뢰**: `/config`와 `/config/test`도 `Access-Control-Allow-Origin: *`를 보내므로 **이 머신의 어떤 웹페이지든** `baseUrl` / `model` / 전달 스위치 / 단가를 바꾸고 프로브를 한 번 실행시킬 수 있습니다. 따라서 8787 포트를 LAN이나 인터넷으로 포워딩·노출하지 마세요. 공용 머신에서는 다른 로컬 사용자도 접근할 수 있습니다.
+- **키는 단방향**: 읽기 엔드포인트는 끝 4자리(`sk-***c3a3`)만 돌려주고, 쓰기 엔드포인트는 키를 "교체"할 수는 있어도 "읽을" 수는 없습니다. 빈 문자열, `***`, 마스킹 값은 모두 "변경하지 않음"을 뜻하며 로그에도 키가 남지 않습니다.
 - **커밋 전 자기 점검**: `git status --short`에 `collector.config.json`이 나타나면 안 됩니다.
 
 ---
@@ -319,13 +351,13 @@ node tools/shot.js --out=ref/mine.png           # 스크린샷(ref/와 나란히
 
 | 검증 항목 | 명령 | 결과 |
 | --- | --- | --- |
-| 단위 테스트 | `node --test` | **91 / 91 통과**, 실패 0, 약 2.8초 |
-| E2E 프로브 | `node tools/probe.js` | **98 / 98 검증 통과**(뷰포트 390×844, 패널 358.8×521.89) |
-| 단일 파일 프로브 | `node tools/probe.js --target=llm-monitor.html` | **92 / 92 검증 통과**(뷰포트 504×805, 패널 420×610.56) |
-| 단일 파일 빌드 | `node build.js` | `llm-monitor.html` 81,299바이트(79.4 KB), 인라인 모듈 11개. 재빌드 시 **SHA256이 바이트 단위로 동일** |
-| 설치 프로그램 | `Tokmeter-0.1.0-setup.exe` | 92,069,277바이트(87.8 MB), SHA256 `9CDD7BAF…C5165F90` |
+| 단위 테스트 | `node --test` | **110 / 110 통과**, 실패 0, 약 2.8초 |
+| E2E 프로브 | `node tools/probe.js` | **141 / 141 검증 통과**(뷰포트 390×844, 패널 358.8×521.89) |
+| 단일 파일 프로브 | `node tools/probe.js --target=llm-monitor.html` | **135 / 135 검증 통과**(뷰포트 504×805, 패널 420×610.56) |
+| 단일 파일 빌드 | `node build.js` | `llm-monitor.html` 102,443바이트(100.0 KB), 인라인 모듈 12개. 재빌드 시 **SHA256이 바이트 단위로 동일** |
+| 설치 프로그램 | `Tokmeter-0.2.0-setup.exe` | 92,079,376바이트(87.8 MB), `VersionInfo.FileVersion = 0.2.0`, SHA256 `D7EE375A…48DC9BF` |
 
-단일 파일 산출물 SHA256: `70A5DCAF1AA9FD75CC2180C2F5A3568C34C662EE9C9DD447C449EB2674F670A3`
+단일 파일 산출물 SHA256: `30EAF39A310C5368F1B9EF5D9F88B1450F4D80929A4D21727109AAA67EEFEEAC`
 
 ### 참고 디자인과의 일치도
 
@@ -353,13 +385,14 @@ src/units.js                  균등 스케일링 단위
 src/store.js                  Snapshot 계약, 링 버퍼, 상태 컨테이너
 src/scheduler.js              렌더 스로틀링(애니메이션 프레임당 최대 1회 다시 그리기)
 src/render.js                 정적 구조 + 프레임별 갱신 + 프로브 수집
+src/settings.js               패널 내 설정 오버레이: GET/POST /config, /config/test, apiKey는 마스킹 값으로 왕복
 src/sources/mock.js           모의 vLLM 텔레메트리 엔진(시드 가능, 결정론적)
 src/sources/http.js           JSON 폴링 + 성능 저하/백오프 + transform 주입
 src/sources/vllm-metrics.js   Prometheus 텍스트 파싱과 매핑
 src/sources/client.js         클라이언트 뷰 페이로드 매핑
 collector.js                  수집기 진입점(node collector.js)
 collector/config.js           설정 기본값 + 검증
-collector/server.js           HTTP 서비스: /snapshot, /health, 선택적 /v1 전달
+collector/server.js           HTTP 서비스: /snapshot, /health, /config, /config/test, 선택적 /v1 전달
 collector/openai-probe.js     OpenAI 스트리밍 응답 측정(TTFT / tok/s)
 collector/stats.js            슬라이딩 윈도 통계(P50/P95, 성공률, 사용량, 비용)
 collector.config.example.json 설정 템플릿(자리표시자 키)
@@ -367,7 +400,7 @@ build.js                      의존성 없는 단일 파일 빌드
 tools/probe.js                E2E 프로브
 tools/shot.js                 스크린샷
 desktop/                      Windows 데스크톱 빌드(Electron 셸 + 내장 수집기 + NSIS 설치 프로그램)
-tests/                        단위 테스트(91개)
+tests/                        단위 테스트(110개)
 ref/                          참고 스크린샷과 비교 산출물
 ```
 

@@ -18,6 +18,8 @@ export const WIDGET_CSS = [
   'body { -webkit-app-region: drag; }',
   '.panel, .hdr { -webkit-app-region: drag; }',
   '.ftr-actions, .ftr-actions *, .ftr-icon, .ftr-clock,',
+  // 标题栏右侧的连接状态区 = 设置入口：必须是 no-drag，否则拖拽区吃掉 click
+  '.hdr-link, .hdr-link *, .overlay, .overlay * { -webkit-app-region: no-drag; }',
   'a, button, input, select, textarea, [role="button"] { -webkit-app-region: no-drag; }',
   '::-webkit-scrollbar { width: 0; height: 0; }',
 ].join('\n');
@@ -28,6 +30,8 @@ export const WIDGET_CSS = [
  */
 export function buildPanelUrl({ view = 'client', port = 8787 } = {}) {
   const url = new URL(pathToFileURL(panelPath()).href);
+  // 设置浮层要连的就是内置采集器：显式给出根地址，两种视图下齿轮都能用
+  url.searchParams.set('config', 'http://127.0.0.1:' + port);
   if (view === 'client') {
     url.searchParams.set('view', 'client');
     url.searchParams.set('endpoint', 'http://127.0.0.1:' + port + '/snapshot');
