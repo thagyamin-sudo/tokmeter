@@ -19,10 +19,11 @@ export function latencyScore(p50ms) {
   return clamp01(1 - p50ms / 2000);
 }
 
-/** 吞吐得分：500 tok/s 记满分（只用于画环）。 */
+/** 吞吐得分：100 tok/s 记满分（只用于画环）。
+ *  基准取云 API 的现实量级：定成 500 时，实测 24 tok/s 的环只有 5%，看着像坏了。 */
 export function rateScore(p50rate) {
   if (!Number.isFinite(p50rate) || p50rate <= 0) return NaN;
-  return clamp01(p50rate / 500);
+  return clamp01(p50rate / 100);
 }
 
 /** 把采集器的 /snapshot 映射成面板快照；缺字段保持未知。 */

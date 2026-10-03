@@ -108,7 +108,13 @@ export function createCollector({ config, fetchImpl = fetch, now = () => Date.no
 
   function sendJson(res, code, body) {
     const text = JSON.stringify(body);
-    res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+    res.writeHead(code, {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+      // 面板常以 file:// 或别的端口打开，必须放行跨域（只读接口、只监听本机、不含任何密钥）
+      'access-control-allow-origin': '*',
+      'access-control-allow-headers': 'content-type',
+    });
     res.end(text);
   }
 
@@ -172,6 +178,14 @@ export function createCollector({ config, fetchImpl = fetch, now = () => Date.no
   }
 
   const handler = (req, res) => {
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, {
+        'access-control-allow-origin': '*',
+        'access-control-allow-headers': 'content-type',
+        'access-control-allow-methods': 'GET,POST,OPTIONS',
+      });
+      return res.end();
+    }
     if (req.url === '/snapshot' || req.url === '/') return sendJson(res, 200, snapshotPayload());
     if (req.url === '/health') return sendJson(res, 200, { ok: true, status });
     if (config.proxy && req.url.startsWith('/v1/')) return void proxy(req, res);

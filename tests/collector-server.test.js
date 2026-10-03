@@ -94,7 +94,9 @@ test('HTTP 入口：/health 与 /snapshot 可访问，未知路径 404', async (
   await col.probeOnce();
 
   const health = await fetch(base + '/health').then((r) => r.json());
-  const snap = await fetch(base + '/snapshot').then((r) => r.json());
+  const snapRes = await fetch(base + '/snapshot');
+  const snap = await snapRes.json();
+  const cors = snapRes.headers.get('access-control-allow-origin');
   const missing = await fetch(base + '/nope');
   server.close();
   up.server.close();
@@ -102,4 +104,6 @@ test('HTTP 入口：/health 与 /snapshot 可访问，未知路径 404', async (
   assert.equal(health.ok, true);
   assert.equal(snap.view, 'client');
   assert.equal(missing.status, 404);
+  // 面板常以 file:// 或别的端口打开：只读接口必须放行跨域
+  assert.equal(cors, '*');
 });

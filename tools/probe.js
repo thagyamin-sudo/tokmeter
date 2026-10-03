@@ -230,8 +230,8 @@ function checkClientView(p) {
   eq('客户端视图：P95 延迟', p.cards.kv.headroom, 'P95 900ms');
   near('客户端视图：延迟环得分', p.cards.kv.ratio, 0.84, 0.01);
   eq('客户端视图：吞吐标题', p.cards.mtp.title, '吞吐分位');
-  eq('客户端视图：P95 吞吐', p.cards.mtp.tar, '290');
-  near('客户端视图：吞吐环得分', p.cards.mtp.ratio, 0.42, 0.01);
+  eq('客户端视图：P95 吞吐', p.cards.mtp.tar, '88');
+  near('客户端视图：吞吐环得分（100 tok/s 记满分）', p.cards.mtp.ratio, 0.62, 0.01);
   eq('客户端视图：用量标题', p.cards.mem.title, '今日用量');
   eq('客户端视图：输入用量', p.cards.mem.pair, '输入 1.0M');
   eq('客户端视图：成本', p.cards.mem.free, '$6.00');

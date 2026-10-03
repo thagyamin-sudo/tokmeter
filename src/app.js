@@ -79,18 +79,18 @@ function clientFixture(now, seedValue) {
     v = Math.max(40, v + (rnd() - 0.5) * 60);
     history.push(Math.round(v));
   }
-  history[59] = 210;
+  history[59] = 62;
   return {
     view: 'client',
     status: 'live',
     clock: formatClock(new Date(now)),
     updatedAt: now,
     model: { name: 'deepseek-chat', engine: 'OpenAI 兼容', nodes: 'API' },
-    output: { tokPerSec: 210, history },
+    output: { tokPerSec: 62, history },
     input: { tokPerSec: 3400, prefillAvgMs: 320 },
     requests: { active: 1, queued: 0, capacity: 1 },
     client: {
-      ttftP50: 320, ttftP95: 900, rateP50: 210, rateP95: 290, probeCount: 42, failCount: 2,
+      ttftP50: 320, ttftP95: 900, rateP50: 62, rateP95: 88, probeCount: 42, failCount: 2,
       successRate: 0.95, available: false, tokensIn: 1000000, tokensOut: 500000, cost: 6, lastError: null,
       history: history.slice(-15),
     },

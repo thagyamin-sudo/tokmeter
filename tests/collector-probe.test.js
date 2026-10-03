@@ -34,6 +34,20 @@ test('测量：TTFT 取首个内容 chunk 的时间，速率按"首 token→结�
   assert.equal(Math.round(r.tokPerSec), 10, '生成阶段 300ms 产出 3 token → 10 tok/s');
 });
 
+test('测量：推理模型的 reasoning_content 也要计入（否则速率量成 0）', async () => {
+  const { clock, stream } = streamClock(
+    ['data: ' + JSON.stringify({ choices: [{ delta: { role: 'assistant', content: null } }] }),
+     'data: ' + JSON.stringify({ choices: [{ delta: { reasoning_content: '想' } }] }),
+     'data: ' + JSON.stringify({ choices: [{ delta: { reasoning_content: '一下' } }] }),
+     'data: ' + JSON.stringify({ choices: [{ delta: { content: '答案' } }] }),
+     'data: [DONE]'],
+    100
+  );
+  const r = await measureOpenAiStream(stream, clock);
+  assert.equal(r.completionTokens, 3, 'reasoning 与 content 都要计数');
+  assert.equal(r.ttftMs, 200, '首个 reasoning chunk 就是首 token');
+});
+
 test('测量：优先采用 usage 里的真实 token 数', async () => {
   const { clock, stream } = streamClock(
     [chunk('a'), 'data: ' + JSON.stringify({ choices: [{ delta: {} }], usage: { prompt_tokens: 120, completion_tokens: 40 } }), 'data: [DONE]'],

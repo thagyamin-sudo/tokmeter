@@ -49,7 +49,8 @@ test('环比例：延迟越短越满，吞吐越高越满，未知值不产出�
   assert.equal(latencyScore(0), NaN);
   assert.equal(latencyScore(1000), 0.5);
   assert.equal(latencyScore(5000), 0);
-  assert.equal(rateScore(250), 0.5);
+  assert.equal(rateScore(50), 0.5);
+  assert.equal(rateScore(24), 0.24, '实测 24 tok/s 要看得见');
   assert.equal(rateScore(9999), 1);
   assert.equal(rateScore(NaN), NaN);
 });

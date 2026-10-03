@@ -301,7 +301,10 @@ export function paintClientCards(root, s) {
 
   setText(root, 'gpu-value', Number.isFinite(c.successRate) ? Math.round(c.successRate * 100) + '%' : '--');
   setText(root, 'gpu-state', c.available ? '探测正常' : (c.probeCount ? '部分失败' : '等待首个样本'));
-  drawBars(root, Array.isArray(c.history) ? c.history : []);
+  // 固定 15 个槽位：样本少时柱条会又粗又少，看着像坏了（真机实测 3 个样本时很明显）
+  const series = Array.isArray(c.history) ? c.history : [];
+  const padded = Array(Math.max(0, 15 - series.length)).fill(0).concat(series).slice(-15);
+  drawBars(root, padded);
 }
 
 /** 每帧更新：把快照写进 DOM。 */

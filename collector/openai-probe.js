@@ -43,8 +43,12 @@ export async function measureOpenAiStream(chunks, now = () => Date.now(), starte
       if (Number.isFinite(usage.prompt_tokens)) promptTokens = usage.prompt_tokens;
     }
 
+    // 推理模型的思考 token 走 reasoning_content（DeepSeek-R1 / Qwen3 thinking 等），
+    // 它们同样是"真实产出"，漏掉会把速率量成 0（实测踩过）。
     const delta = json.choices && json.choices[0] && json.choices[0].delta;
-    const text = delta ? delta.content : undefined;
+    const content = delta ? delta.content : undefined;
+    const reasoning = delta ? delta.reasoning_content : undefined;
+    const text = typeof content === 'string' && content.length > 0 ? content : reasoning;
     if (typeof text === 'string' && text.length > 0) {
       if (ttftMs === null) ttftMs = now() - started;
       contentChunks += 1;

@@ -1072,10 +1072,11 @@ function latencyScore(p50ms) {
   return clamp01(1 - p50ms / 2000);
 }
 
-/** 吞吐得分：500 tok/s 记满分（只用于画环）。 */
+/** 吞吐得分：100 tok/s 记满分（只用于画环）。
+ *  基准取云 API 的现实量级：定成 500 时，实测 24 tok/s 的环只有 5%，看着像坏了。 */
 function rateScore(p50rate) {
   if (!Number.isFinite(p50rate) || p50rate <= 0) return NaN;
-  return clamp01(p50rate / 500);
+  return clamp01(p50rate / 100);
 }
 
 /** 把采集器的 /snapshot 映射成面板快照；缺字段保持未知。 */
@@ -1529,7 +1530,10 @@ function paintClientCards(root, s) {
 
   setText(root, 'gpu-value', Number.isFinite(c.successRate) ? Math.round(c.successRate * 100) + '%' : '--');
   setText(root, 'gpu-state', c.available ? '探测正常' : (c.probeCount ? '部分失败' : '等待首个样本'));
-  drawBars(root, Array.isArray(c.history) ? c.history : []);
+  // 固定 15 个槽位：样本少时柱条会又粗又少，看着像坏了（真机实测 3 个样本时很明显）
+  const series = Array.isArray(c.history) ? c.history : [];
+  const padded = Array(Math.max(0, 15 - series.length)).fill(0).concat(series).slice(-15);
+  drawBars(root, padded);
 }
 
 /** 每帧更新：把快照写进 DOM。 */
@@ -1812,18 +1816,18 @@ function clientFixture(now, seedValue) {
     v = Math.max(40, v + (rnd() - 0.5) * 60);
     history.push(Math.round(v));
   }
-  history[59] = 210;
+  history[59] = 62;
   return {
     view: 'client',
     status: 'live',
     clock: formatClock(new Date(now)),
     updatedAt: now,
     model: { name: 'deepseek-chat', engine: 'OpenAI 兼容', nodes: 'API' },
-    output: { tokPerSec: 210, history },
+    output: { tokPerSec: 62, history },
     input: { tokPerSec: 3400, prefillAvgMs: 320 },
     requests: { active: 1, queued: 0, capacity: 1 },
     client: {
-      ttftP50: 320, ttftP95: 900, rateP50: 210, rateP95: 290, probeCount: 42, failCount: 2,
+      ttftP50: 320, ttftP95: 900, rateP50: 62, rateP95: 88, probeCount: 42, failCount: 2,
       successRate: 0.95, available: false, tokensIn: 1000000, tokensOut: 500000, cost: 6, lastError: null,
       history: history.slice(-15),
     },
