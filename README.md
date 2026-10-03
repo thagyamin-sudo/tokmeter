@@ -62,7 +62,7 @@ python -m http.server 8000
 
 ```bash
 node --test                                      # 61 个单测（纯逻辑 + 构建 + 对抗性边界 + 真实 HTTP 端到端）
-node tools/probe.js                              # E2E 探针：真实 390x844 视口 + 320x700 窄屏，59 项断言
+node tools/probe.js                              # E2E 探针：真实 390x844 视口 + 320x700 窄屏，65 项断言
 node tools/probe.js --target=llm-monitor.html    # 同一套断言跑在离线单文件产物上
 node build.js                                    # 由 src/ + styles.css 重新生成 llm-monitor.html
 node tools/shot.js --out=ref/mine.png            # 截图，用于与 ref/ 参考图并排比对
@@ -100,7 +100,7 @@ tests/                       单测；tests/verify-sources.test.js 是独立对�
 | 数值量级突变（2.3M）不挤坏 Hero | ✅ 探针注入帧断言"数字+单位不侵入折线区" |
 | 每秒刷新：数字/折线/进度条/三个环形/柱条 | ✅ 生产走 1s 采样 + rAF 合并，合并语义有单测 |
 | 时钟为本地时间（秒级） | ✅ |
-| 单文件双击离线可用 | ✅ 探针在 file:// 下 55/55（窄屏 4 项需 iframe 承载，显式跳过） |
+| 单文件双击离线可用 | ✅ 探针在 file:// 下 59/59（窄屏 6 项需 iframe 承载，显式跳过） |
 | vLLM metrics 解析 | ✅ 含一条真实 HTTP 端到端测试（本地伪造 /metrics），另可用你的地址实测 |
 | 端点异常显示"未连接"且布局不塌陷 | ✅ 探针断言面板宽高不变、曲线保留最后一帧 |
 | node --test 全绿、无第三方依赖 | ✅ 61/61 |

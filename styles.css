@@ -258,13 +258,14 @@ body {
 .card-body.ring-body {
   flex-direction: row;
   align-items: center;
-  gap: calc(var(--u) * 2.2);
+  /* 参考图里环与右侧文案几乎是贴着的（间隙≈0）；留 2u 会把 "Cache Hit 93%" 挤到省略号 */
+  gap: calc(var(--u) * 0.8);
 }
 .ring-wrap {
   position: relative;
   flex: 0 0 auto;
-  width: calc(var(--u) * 18.4);
-  height: calc(var(--u) * 18.4);
+  width: calc(var(--u) * 18);
+  height: calc(var(--u) * 18);
 }
 .ring {
   display: block;

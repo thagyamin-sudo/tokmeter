@@ -250,6 +250,23 @@ export function collectProbe(root, s, stats) {
     return n ? n.getBoundingClientRect().width : 0;
   };
   const cardEl = root.querySelector('#card-req');
+  // 量 "Cache Hit 93%" 的真实文本宽度与可用宽度（scrollWidth 在 ellipsis 下会被钳住，不可用）
+  const kvFit = (() => {
+    const node = root.querySelector('#kv-hit');
+    if (!node) return { need: 0, avail: 0 };
+    const cs = getComputedStyle(node);
+    const probe = document.createElement('span');
+    probe.textContent = node.textContent;
+    // 不能用 cs.font：Chrome 常返回空串，量出来会变成 16px 默认字体（假数据）
+    probe.style.cssText =
+      'position:absolute;visibility:hidden;white-space:nowrap;' +
+      'font-family:' + cs.fontFamily + ';font-size:' + cs.fontSize +
+      ';font-weight:' + cs.fontWeight + ';letter-spacing:' + cs.letterSpacing;
+    document.body.appendChild(probe);
+    const need = Math.round(probe.getBoundingClientRect().width * 100) / 100;
+    probe.remove();
+    return { need, avail: Math.round(node.clientWidth * 100) / 100 };
+  })();
   return {
     mode: 'test',
     viewport: { w: innerWidth, h: innerHeight },
@@ -299,11 +316,12 @@ export function collectProbe(root, s, stats) {
         value: read('kv-value'),
         headroom: read('kv-headroom'),
         hit: read('kv-hit'),
-        // 省略号兜底很容易把正常文案也吃掉（曾把 "Cache Hit 93%" 截成 "Cache Hit …"），必须断言
-        clipped: (() => {
-          const n = root.querySelector('#kv-hit');
-          return n ? n.scrollWidth > n.clientWidth + 1 : false;
-        })(),
+        // 省略号兜底很容易把正常文案也吃掉（曾把 "Cache Hit 93%" 截成 "Cache Hit …"）。
+        // 注意不能用 scrollWidth 判断：text-overflow: ellipsis 下 scrollWidth 会被钳到 clientWidth，
+        // 得到的是假阴性。这里用同字体的隐藏 span 量真实文本宽度。
+        clipped: kvFit.need > kvFit.avail + 1,
+        need: kvFit.need,
+        avail: kvFit.avail,
         ratio: arcRatio(root.querySelector('#kv-arc')),
       },
       mtp: {
