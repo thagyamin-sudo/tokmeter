@@ -62,7 +62,7 @@ python -m http.server 8000
 
 ```bash
 node --test                                      # 60 个单测（纯逻辑 + 构建 + 对抗性边界）
-node tools/probe.js                              # E2E 探针：真实 390x844 视口，51 项断言
+node tools/probe.js                              # E2E 探针：真实 390x844 视口 + 320x700 窄屏，59 项断言
 node tools/probe.js --target=llm-monitor.html    # 同一套断言跑在离线单文件产物上
 node build.js                                    # 由 src/ + styles.css 重新生成 llm-monitor.html
 node tools/shot.js --out=ref/mine.png            # 截图，用于与 ref/ 参考图并排比对
@@ -96,9 +96,11 @@ tests/                       单测；tests/verify-sources.test.js 是独立对�
 | 验收项 | 结果 |
 | --- | --- |
 | 与参考截图并排比对，9 个区域一致 | ✅ 面板高宽比 1.4540 vs 参考 1.4518（差 0.16%） |
+| 极窄视口（320px）不溢出、比例不变 | ✅ 探针窄屏运行断言 |
+| 数值量级突变（2.3M）不挤坏 Hero | ✅ 探针注入帧断言"数字+单位不侵入折线区" |
 | 每秒刷新：数字/折线/进度条/三个环形/柱条 | ✅ 生产走 1s 采样 + rAF 合并，合并语义有单测 |
 | 时钟为本地时间（秒级） | ✅ |
-| 单文件双击离线可用 | ✅ 探针在 file:// 下 51/51 |
+| 单文件双击离线可用 | ✅ 探针在 file:// 下 55/55（窄屏 4 项需 iframe 承载，显式跳过） |
 | vLLM metrics 解析 | ✅ 解析与映射有单测；端到端需你提供地址 |
 | 端点异常显示"未连接"且布局不塌陷 | ✅ 探针断言面板宽高不变、曲线保留最后一帧 |
 | node --test 全绿、无第三方依赖 | ✅ 60/60 |

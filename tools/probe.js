@@ -246,19 +246,22 @@ async function main() {
   }
 
   // 第三次运行：降级路径
-  // 第四次运行：极窄视口（320x700）
+  // 第四次运行：极窄视口（320x700）。需要 iframe 才能设视口，file:// 直开模式显式跳过。
   const narrowW = 320;
   const narrowH = 700;
-  const narrowUrl = server
-    ? 'http://127.0.0.1:' + server.address().port + '/tools/frame.html?w=' + narrowW + '&h=' + narrowH +
-      '&q=' + encodeURIComponent(query)
-    : makeUrl('');
-  const dom4 = await dumpDom(narrowUrl);
-  const m4 = dom4.match(/PROBE_JSON:(\{[\s\S]*?\})<\/pre>/);
-  if (!m4) {
-    add('窄屏探针', false, '极窄视口运行没有拿到探针输出');
+  let narrowSkipped = false;
+  if (server) {
+    const narrowUrl = 'http://127.0.0.1:' + server.address().port + '/tools/frame.html?w=' + narrowW +
+      '&h=' + narrowH + '&q=' + encodeURIComponent(query);
+    const dom4 = await dumpDom(narrowUrl);
+    const m4 = dom4.match(/PROBE_JSON:(\{[\s\S]*?\})<\/pre>/);
+    if (!m4) {
+      add('窄屏探针', false, '极窄视口运行没有拿到探针输出');
+    } else {
+      checkNarrow(JSON.parse(m4[1]), narrowW);
+    }
   } else {
-    checkNarrow(JSON.parse(m4[1]), narrowW);
+    narrowSkipped = true;
   }
 
   const dom3 = await dumpDom(makeUrl('fail=1&island=1'));
@@ -270,6 +273,9 @@ async function main() {
   }
 
   const failed = checks.filter((c) => !c.ok);
+  if (narrowSkipped) {
+    console.log('  skip  窄屏（320x700）：离线产物模式没有 iframe 承载，无法设视口 —— 由 http 模式覆盖');
+  }
   for (const c of checks) console.log((c.ok ? '  ok   ' : '  FAIL ') + c.label + (c.ok ? '' : '  → ' + c.detail));
   console.log('\n探针：' + (checks.length - failed.length) + '/' + checks.length + ' 通过；视口 ' +
     p.viewport.w + 'x' + p.viewport.h + '，面板 ' + p.panel.w + 'x' + p.panel.h);
