@@ -55,7 +55,7 @@ body {
   display: flex;
   align-items: center;
   gap: calc(var(--u) * 2.8);
-  height: calc(var(--u) * 11);
+  height: calc(var(--u) * 10.4);
 }
 .hdr-icon {
   flex: 0 0 auto;
@@ -97,7 +97,7 @@ body {
 /* ---------- Hero：实时输出 Token ---------- */
 .hero {
   position: relative;
-  height: calc(var(--u) * 26.8);
+  height: calc(var(--u) * 26.4);
   border-radius: calc(var(--u) * 3.6);
   background: var(--hero-bg);
   border: calc(var(--u) * 0.25) solid var(--hero-border);
@@ -136,8 +136,8 @@ body {
 .hero-chart {
   position: absolute;
   right: calc(var(--u) * 2.6);
-  top: calc(var(--u) * 4);
-  width: calc(var(--u) * 45);
+  top: calc(var(--u) * 4.8);
+  width: calc(var(--u) * 41);
   height: calc(var(--u) * 19);
 }
 
@@ -149,7 +149,7 @@ body {
 }
 
 .card {
-  height: calc(var(--u) * 28.5);
+  height: calc(var(--u) * 26.6);
   background: var(--card);
   border-radius: calc(var(--u) * 3.2);
   padding: calc(var(--u) * 3);
@@ -249,8 +249,8 @@ body {
 .ring-wrap {
   position: relative;
   flex: 0 0 auto;
-  width: calc(var(--u) * 18.5);
-  height: calc(var(--u) * 18.5);
+  width: calc(var(--u) * 19.4);
+  height: calc(var(--u) * 19.4);
 }
 .ring {
   display: block;
@@ -311,7 +311,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: calc(var(--u) * 8.8);
+  height: calc(var(--u) * 8.4);
 }
 .ftr-clock {
   display: flex;

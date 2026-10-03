@@ -89,8 +89,8 @@ export function renderShell(root) {
     '    <div class="hero-value"><span class="hero-num" id="out-rate">--</span><span class="hero-unit">tok/s</span></div>',
     '    <div class="hero-foot">最近 60 秒</div>',
     '  </div>',
-    '  <svg class="hero-chart" id="spark" viewBox="0 0 45 19">',
-    '    <path id="spark-path" fill="none" stroke="var(--green)" stroke-width="1.1"',
+    '  <svg class="hero-chart" id="spark" viewBox="0 0 41 19">',
+    '    <path id="spark-path" fill="none" stroke="var(--green)" stroke-width="0.95"',
     '      stroke-linecap="round" stroke-linejoin="round" d=""></path>',
     '  </svg>',
     '</section>',
@@ -146,7 +146,7 @@ export function renderShell(root) {
 function drawBars(root, history) {
   const svg = root.querySelector('#gpu-bars');
   if (!svg) return;
-  const rects = barRects(history, { x: 0, y: 0, w: BARS_W, h: BARS_H }, 0.18);
+  const rects = barRects(history, { x: 0, y: 0, w: BARS_W, h: BARS_H }, 0.12);
   while (svg.childElementCount > rects.length) svg.lastElementChild.remove();
   while (svg.childElementCount < rects.length) {
     const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
@@ -202,7 +202,7 @@ export function paint(root, s) {
   setText(root, 'out-rate', formatRate(s.output.tokPerSec));
   setText(root, 'clock', s.clock);
   const path = root.querySelector('#spark-path');
-  if (path) path.setAttribute('d', sparklinePath(s.output.history, 45, 19, 2));
+  if (path) path.setAttribute('d', sparklinePath(s.output.history, 41, 19, 2));
   paintCards(root, s);
 }
 
@@ -217,7 +217,7 @@ function arcRatio(node) {
 }
 
 /** 采集探针数据：真实几何 + 关键文本，供无头浏览器断言。 */
-export function collectProbe(root, s, paintCount) {
+export function collectProbe(root, s, stats) {
   const pr = root.getBoundingClientRect();
   const hero = root.querySelector('#hero').getBoundingClientRect();
   const d = (root.querySelector('#spark-path') || { getAttribute: () => '' }).getAttribute('d') || '';
@@ -291,7 +291,13 @@ export function collectProbe(root, s, paintCount) {
         bars: (root.querySelector('#gpu-bars') || { childElementCount: 0 }).childElementCount,
       },
     },
-    paintCount: paintCount || 0,
+    paintCount: (stats && stats.paints) || 0,
+    updateCount: (stats && stats.updates) || 0,
+    samples: {
+      count: (stats && stats.samples) || 0,
+      firstRate: stats ? stats.firstRate : null,
+      rate: s.output.tokPerSec,
+    },
     status: s.status,
   };
 }
