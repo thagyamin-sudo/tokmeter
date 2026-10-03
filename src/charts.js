@@ -40,8 +40,10 @@ export function ringGeometry(ratio, radius, strokeWidth) {
   return {
     r,
     circumference,
+    // dasharray 用 <弧长> <整圈> 表示"画一段、空一整圈"，起点即弧的起点（12 点方向由 CSS rotate 保证）。
+    // dashoffset 必须保持 0：再叠加 (1-ratio) 的偏移会让可见弧长变成 (1-ratio)，是个画错但测试抓不到的坑。
     dasharray: dash + ' ' + circumference,
-    dashoffset: circumference * (1 - safe),
+    dashoffset: 0,
     size: 2 * r + strokeWidth,
   };
 }

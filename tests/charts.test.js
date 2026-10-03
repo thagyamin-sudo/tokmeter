@@ -17,8 +17,10 @@ test('ringGeometry 比例到 dasharray', () => {
   assert.ok(Math.abs(full.circumference - 2 * Math.PI * 31) < 1e-9);
   assert.equal(full.dasharray, full.circumference + ' ' + full.circumference);
   assert.equal(ringGeometry(0, 31, 9).dasharray, '0 ' + full.circumference);
+  // dasharray 已经表达了弧长，dashoffset 必须为 0；否则偏移与 dash 叠加，弧长会变成 (1-ratio)
   const p = ringGeometry(0.69, 31, 9);
-  assert.ok(Math.abs(p.dashoffset - full.circumference * (1 - 0.69)) < 1e-9);
+  assert.equal(p.dashoffset, 0);
+  assert.equal(p.dasharray, full.circumference * 0.69 + ' ' + full.circumference);
   assert.equal(ringGeometry(NaN, 31, 9).dasharray, '0 ' + full.circumference);
 });
 
