@@ -129,6 +129,7 @@ function checkShell(p) {
   within('Hero 高 / 面板宽', p.hero.ratio, 0.255, 0.281);
   near('面板宽 = min(92vw,420)', p.panel.w, Math.min(0.92 * p.viewport.w, 420), 1.5);
   eq('灵动岛：默认不出现', p.island.present, false);
+  eq('默认视图：server（与参考截图一致）', p.view, 'server');
 }
 
 /** 任务 7：六张数据卡。 */
@@ -216,6 +217,35 @@ function checkDegrade(p, live) {
   eq('灵动岛：显示 tok/s', p.island.rate, '257');
 }
 
+/** 客户端视图：卡片语义必须是"云 API 真能给的量"。 */
+function checkClientView(p) {
+  eq('客户端视图：视图标记', p.view, 'client');
+  eq('客户端视图：连接状态', p.texts.link, 'API 已连接');
+  eq('客户端视图：探测状态标题', p.cards.requests.title, '探测状态');
+  eq('客户端视图：成功数', p.cards.requests.active, '40');
+  eq('客户端视图：失败数', p.cards.requests.queued, '2');
+  near('客户端视图：成功率进度条', p.cards.requests.run / p.cards.requests.total, 0.95, 0.02);
+  eq('客户端视图：响应延迟标题', p.cards.kv.title, '响应延迟');
+  eq('客户端视图：P50 延迟', p.cards.kv.value, '320ms');
+  eq('客户端视图：P95 延迟', p.cards.kv.headroom, 'P95 900ms');
+  near('客户端视图：延迟环得分', p.cards.kv.ratio, 0.84, 0.01);
+  eq('客户端视图：吞吐标题', p.cards.mtp.title, '吞吐分位');
+  eq('客户端视图：P95 吞吐', p.cards.mtp.tar, '290');
+  near('客户端视图：吞吐环得分', p.cards.mtp.ratio, 0.42, 0.01);
+  eq('客户端视图：用量标题', p.cards.mem.title, '今日用量');
+  eq('客户端视图：输入用量', p.cards.mem.pair, '输入 1.0M');
+  eq('客户端视图：成本', p.cards.mem.free, '$6.00');
+  eq('客户端视图：可用率', p.cards.gpu.value, '95%');
+  eq('客户端视图：可用率副文案', p.cards.gpu.state, '部分失败');
+  eq('客户端视图：折线仍是 60 点', p.spark.points, 60);
+  eq('客户端视图：柱条 15 根', p.cards.gpu.bars, 15);
+  // 云 API 不可能提供的服务端内部量：必须保持未知，不能编造 0
+  eq('客户端视图：KV 占用保持未知', p.raw.kvCacheUsage, null);
+  eq('客户端视图：MTP TAR 保持未知', p.raw.mtpTar, null);
+  eq('客户端视图：显存保持未知', p.raw.memoryUsedGB, null);
+  eq('客户端视图：GPU 利用率保持未知', p.raw.gpuUtil, null);
+}
+
 async function main() {
   let server = null;
   let base = '';
@@ -279,6 +309,15 @@ async function main() {
     add('降级模式探针', false, '第三次运行没有拿到探针输出');
   } else {
     checkDegrade(JSON.parse(m3[1]), p);
+  }
+
+  // 第五次运行：客户端视图（云 API 观测）
+  const dom5 = await dumpDom(makeUrl('view=client'));
+  const m5 = dom5.match(/PROBE_JSON:(\{[\s\S]*?\})<\/pre>/);
+  if (!m5) {
+    add('客户端视图探针', false, '客户端视图运行没有拿到探针输出');
+  } else {
+    checkClientView(JSON.parse(m5[1]));
   }
 
   const failed = checks.filter((c) => !c.ok);

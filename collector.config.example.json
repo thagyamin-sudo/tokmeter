@@ -1,0 +1,11 @@
+{
+  "baseUrl": "https://api.deepseek.com/v1",
+  "apiKey": "在这里填你的 key（这个文件请勿提交/外发）",
+  "model": "deepseek-chat",
+  "port": 8787,
+  "probeEveryMs": 15000,
+  "probeMaxTokens": 24,
+  "probePrompt": "用一句话说明什么是缓存。",
+  "proxy": false,
+  "pricing": { "inPerM": 0.27, "outPerM": 1.1 }
+}

@@ -1,0 +1,7 @@
+# 采集器配置：里面有你的 API key，绝不能提交
+collector.config.json
+
+# 系统/编辑器噪声
+.DS_Store
+Thumbs.db
+node_modules/

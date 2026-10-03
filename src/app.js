@@ -9,6 +9,8 @@ import { renderShell, paint, collectProbe, renderIsland } from './render.js';
 import { createScheduler } from './scheduler.js';
 import { createHttpSource } from './sources/http.js';
 import { parsePrometheus, toSnapshot, extractModelName } from './sources/vllm-metrics.js';
+import { createClientSource, mapClientPayload } from './sources/client.js';
+import { formatClock } from './format.js';
 
 const params = new URLSearchParams(location.search);
 const testMode = params.get('test') === '1';
@@ -18,6 +20,8 @@ const tickN = Math.max(0, Number(params.get('tick') || 0));
 // 测试模式默认同步出结果（探针靠 --dump-dom 抓取，不能依赖 rAF 时序）；
 // ?raf=1 时才走真实渲染路径，用于验证"同帧多次更新只画一次"。
 const useRaf = !testMode || params.get('raf') === '1';
+// 视图：server（默认，逐像素对齐参考截图）/ client（云 API 客户端观测）
+const view = params.get('view') === 'client' ? 'client' : 'server';
 
 const panel = document.getElementById('panel');
 
@@ -30,7 +34,8 @@ layout();
 addEventListener('resize', layout);
 addEventListener('orientationchange', layout);
 
-renderShell(panel);
+panel.dataset.view = view;
+renderShell(panel, view);
 if (params.get('island') === '1') renderIsland();   // 可选：灵动岛胶囊，默认关闭
 
 /** 冻结时钟：把今天的时分秒固定下来，让探针输出可复现。 */
@@ -65,7 +70,36 @@ function onUpdate(s) {
 
 store.subscribe(onUpdate);
 
-if (testMode) {
+/** 客户端视图的确定性样本：数值固定，便于探针断言。 */
+function clientFixture(now, seedValue) {
+  const rnd = mulberry32(seedValue);
+  const history = [];
+  let v = 180;
+  for (let i = 0; i < 60; i++) {
+    v = Math.max(40, v + (rnd() - 0.5) * 60);
+    history.push(Math.round(v));
+  }
+  history[59] = 210;
+  return {
+    view: 'client',
+    status: 'live',
+    clock: formatClock(new Date(now)),
+    updatedAt: now,
+    model: { name: 'deepseek-chat', engine: 'OpenAI 兼容', nodes: 'API' },
+    output: { tokPerSec: 210, history },
+    input: { tokPerSec: 3400, prefillAvgMs: 320 },
+    requests: { active: 1, queued: 0, capacity: 1 },
+    client: {
+      ttftP50: 320, ttftP95: 900, rateP50: 210, rateP95: 290, probeCount: 42, failCount: 2,
+      successRate: 0.95, available: false, tokensIn: 1000000, tokensOut: 500000, cost: 6, lastError: null,
+      history: history.slice(-15),
+    },
+  };
+}
+
+if (testMode && view === 'client') {
+  store.update(mapClientPayload(clientFixture(frozenNow(), seed), emptySnapshot(Date.now())));
+} else if (testMode) {
   const rnd = mulberry32(seed);
   let s = initialSnapshot(frozenNow());
   stats.samples = 1;
@@ -99,6 +133,10 @@ if (testMode) {
     // 数据源不可达时的降级帧：状态变 error，其余字段沿用最后一帧（曲线保留、布局不变）
     store.update({ ...s, status: 'error' });
   }
+} else if (view === 'client') {
+  // 客户端视图连本机采集器；key 只存在采集器的配置文件里，页面里没有
+  const endpoint = params.get('endpoint') || 'http://127.0.0.1:8787/snapshot';
+  createClientSource({ endpoint, intervalMs: 1000, now: () => Date.now() }).start((s) => store.update(s));
 } else {
   pickSource().start((s) => store.update(s));
 }

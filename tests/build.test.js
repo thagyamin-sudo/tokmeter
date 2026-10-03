@@ -20,6 +20,7 @@ const EXPECTED_MODULES = [
   'src/sources/vllm-metrics.js',
   'src/sources/mock.js',
   'src/sources/http.js',
+  'src/sources/client.js',
   'src/render.js',
   'src/scheduler.js',
   'src/app.js',
@@ -78,8 +79,8 @@ test('把内联脚本抽成 .js 后 node --check 通过', () => {
   }
 });
 
-test('内联模块数为 10 且顺序为依赖在前', () => {
+test('内联模块数为 11 且顺序为依赖在前', () => {
   const found = [...html.matchAll(/^\/\* ===== (src\/[^\s]+?\.js) ===== \*\/$/gm)].map((m) => m[1]);
-  assert.equal(found.length, 10, '内联模块数应为 10，实际 ' + found.length);
+  assert.equal(found.length, 11, '内联模块数应为 11，实际 ' + found.length);
   assert.deepEqual(found, EXPECTED_MODULES);
 });

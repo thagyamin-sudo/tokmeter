@@ -1052,6 +1052,181 @@ function createHttpSource({ endpoint, intervalMs = HTTP_DEFAULT_INTERVAL, fetchI
   };
 }
 
+/* ===== src/sources/client.js ===== */
+/**
+ * 客户端视图数据源：轮询本机采集器的 /snapshot。
+ *
+ * 与 vLLM/JSON 源的区别：云 API 不可能给出 KV Cache、MTP、显存、GPU 这些服务端内部量，
+ * 所以这里**只用真实可测的客户端指标**（TTFT、实测 tok/s、成功率、token 用量、成本），
+ * 其余字段保持"未知"（NaN → 界面显示 --），绝不编造。
+ */
+
+const CLIENT_WINDOW = 60;
+const CLIENT_BARS_WINDOW = 15;   // 注意：顶层名不能与其它模块重名（单文件构建会拼接）
+
+const clamp01 = (v) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : NaN);
+
+/** 延迟得分：2 秒为 0 分基准，越快环越满（只用于画环，不改变原始数值的展示）。 */
+function latencyScore(p50ms) {
+  if (!Number.isFinite(p50ms) || p50ms <= 0) return NaN;
+  return clamp01(1 - p50ms / 2000);
+}
+
+/** 吞吐得分：500 tok/s 记满分（只用于画环）。 */
+function rateScore(p50rate) {
+  if (!Number.isFinite(p50rate) || p50rate <= 0) return NaN;
+  return clamp01(p50rate / 500);
+}
+
+/** 把采集器的 /snapshot 映射成面板快照；缺字段保持未知。 */
+function mapClientPayload(payload, prev) {
+  const base = prev && typeof prev === 'object' ? prev : emptySnapshot(0);
+  const p = payload && typeof payload === 'object' ? payload : {};
+  const c = p.client && typeof p.client === 'object' ? p.client : {};
+  const rate = Number.isFinite(p.output && p.output.tokPerSec) ? p.output.tokPerSec : NaN;
+  const history = Array.isArray(p.output && p.output.history)
+    ? p.output.history.filter((v) => Number.isFinite(v)).slice(-CLIENT_WINDOW)
+    : Array.isArray(base.output.history)
+      ? base.output.history.slice()
+      : [];
+
+  const successRate = clamp01(c.successRate);
+  const rateP95 = Number.isFinite(c.rateP95) ? c.rateP95 : NaN;
+
+  return {
+    ...base,
+    model: {
+      name: (p.model && p.model.name) || base.model.name,
+      engine: (p.model && p.model.engine) || 'OpenAI 兼容',
+      nodes: (p.model && p.model.nodes) || 'API',
+      link: base.model.link,
+    },
+    output: { tokPerSec: rate, history },
+    input: {
+      tokPerSec: Number.isFinite(p.input && p.input.tokPerSec) ? p.input.tokPerSec : NaN,
+      prefillAvgMs: Number.isFinite(p.input && p.input.prefillAvgMs) ? p.input.prefillAvgMs : NaN,
+    },
+    requests: {
+      active: Number.isFinite(p.requests && p.requests.active) ? p.requests.active : 0,
+      queued: Number.isFinite(p.requests && p.requests.queued) ? p.requests.queued : 0,
+      capacity: Number.isFinite(p.requests && p.requests.capacity) ? p.requests.capacity : 1,
+    },
+    // 客户端视图专用指标，语义明确，不与服务端字段混用
+    client: {
+      ttftP50: Number.isFinite(c.ttftP50) ? c.ttftP50 : NaN,
+      ttftP95: Number.isFinite(c.ttftP95) ? c.ttftP95 : NaN,
+      rateP50: Number.isFinite(c.rateP50) ? c.rateP50 : NaN,
+      rateP95,
+      probeCount: Number.isFinite(c.probeCount) ? c.probeCount : 0,
+      failCount: Number.isFinite(c.failCount) ? c.failCount : 0,
+      successRate,
+      available: c.available === true,
+      tokensIn: Number.isFinite(c.tokensIn) ? c.tokensIn : 0,
+      tokensOut: Number.isFinite(c.tokensOut) ? c.tokensOut : 0,
+      cost: Number.isFinite(c.cost) ? c.cost : 0,
+      lastError: typeof c.lastError === 'string' ? c.lastError : null,
+      latencyScore: latencyScore(c.ttftP50),
+      rateScore: rateScore(c.rateP50),
+      // 采集器自带历史就尊重它（确定性样本/长连接重放），否则每次轮询追加一个点
+      history: Array.isArray(c.history)
+        ? c.history.filter((v) => Number.isFinite(v)).slice(-CLIENT_BARS_WINDOW)
+        : pushRing(
+            Array.isArray(base.client && base.client.history) ? base.client.history : [],
+            Number.isFinite(rate) ? rate : 0,
+            CLIENT_BARS_WINDOW
+          ).filter((v) => Number.isFinite(v)),
+    },
+    clock: typeof p.clock === 'string' && /^\d{2}:\d{2}:\d{2}$/.test(p.clock) ? p.clock : formatClock(new Date()),
+    status: p.status === 'error' || p.status === 'stale' ? p.status : 'live',
+    updatedAt: Number.isFinite(p.updatedAt) ? p.updatedAt : 0,
+  };
+}
+
+/** MetricsSource：轮询采集器，失败同样按 live→stale→error 降级。 */
+function createClientSource({ endpoint, intervalMs = 1000, fetchImpl = fetch, now = () => Date.now() } = {}) {
+  let status = 'connecting';
+  let running = false;
+  let runId = 0;
+  let timer = null;
+  let inFlight = false;
+  let failures = 0;
+  let snapshot = null;
+  let onSample = null;
+
+  function emit(next, myRun) {
+    if (!running || myRun !== runId) return;
+    snapshot = next;
+    if (!onSample) return;
+    try {
+      const ret = onSample(next);
+      if (ret && typeof ret.then === 'function') ret.then(undefined, () => {});
+    } catch {
+      /* 消费端异常就地隔离 */
+    }
+  }
+
+  async function attempt(myRun) {
+    if (inFlight) return;
+    inFlight = true;
+    let mapped = null;
+    let failed = false;
+    try {
+      const res = await fetchImpl(endpoint, { headers: { accept: 'application/json' }, cache: 'no-store' });
+      if (!res || res.ok === false || (typeof res.status === 'number' && (res.status < 200 || res.status >= 300))) {
+        throw new Error('HTTP ' + (res && res.status));
+      }
+      const json = await res.json();
+      if (!json || typeof json !== 'object' || Array.isArray(json)) throw new Error('采集器返回不是 JSON 对象');
+      mapped = mapClientPayload(json, snapshot);
+    } catch {
+      failed = true;
+    } finally {
+      inFlight = false;
+    }
+    if (!running || myRun !== runId) return;
+    if (failed) {
+      failures += 1;
+      status = failures >= 5 ? 'error' : failures >= 3 ? 'stale' : 'live';
+      const base = snapshot || emptySnapshot(now());
+      emit({ ...base, status }, myRun);
+      return;
+    }
+    failures = 0;
+    status = 'live';
+    emit(mapped, myRun);
+  }
+
+  async function loop(myRun) {
+    try {
+      await attempt(myRun);
+    } catch {
+      /* 兜底：循环不因异常中断 */
+    }
+    if (!running || myRun !== runId) return;
+    timer = setTimeout(() => loop(myRun).catch(() => {}), intervalMs);
+  }
+
+  return {
+    get status() {
+      return status;
+    },
+    start(fn) {
+      if (running) return;
+      running = true;
+      runId += 1;
+      onSample = typeof fn === 'function' ? fn : null;
+      loop(runId).catch(() => {});
+    },
+    stop() {
+      running = false;
+      runId += 1;
+      onSample = null;
+      if (timer !== null) clearTimeout(timer);
+      timer = null;
+    },
+  };
+}
+
 /* ===== src/render.js ===== */
 /**
  * 渲染层：只负责把 Snapshot 写进 DOM，不做任何业务计算。
@@ -1077,6 +1252,58 @@ const ICONS = {
   doc: '<svg viewBox="0 0 16 16" width="100%" height="100%"><path d="M4 1.9h5l3 3v9.2H4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M6.2 8.2h3.6M6.2 10.6h3.6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
 };
 { ICONS };
+
+/**
+ * 视图标签表。服务端视图与参考截图逐字一致；客户端视图把"云 API 不可能提供"的
+ * 服务端指标换成等价的可得指标，绝不沿用服务端标题去装服务端数据。
+ */
+const VIEW_LABELS = {
+  server: {
+    reqTitle: '请求状态',
+    reqA: '活动',
+    reqB: '排队',
+    inputTitle: '输入 Token',
+    inputFoot: 'Prefill 均值',
+    kvTitle: 'KV Cache',
+    kvLabel: '占用率',
+    mtpTitle: 'MTP',
+    tarLabel: 'TAR',
+    memTitle: '统一内存',
+    memFreeLabel: '可用',
+    gpuTitle: 'GPU 活跃度',
+  },
+  client: {
+    reqTitle: '探测状态',
+    reqA: '成功',
+    reqB: '失败',
+    inputTitle: '输入 Token',
+    inputFoot: 'TTFT 均值',
+    kvTitle: '响应延迟',
+    kvLabel: '首 Token',
+    mtpTitle: '吞吐分位',
+    tarLabel: 'P95',
+    memTitle: '今日用量',
+    memFreeLabel: '成本',
+    gpuTitle: '可用率',
+  },
+};
+
+/** 按视图改文案（DOM 结构不变，颜色/布局都不动）。 */
+function applyViewLabels(root, view) {
+  const L = VIEW_LABELS[view === 'client' ? 'client' : 'server'];
+  setText(root, 'title-req', L.reqTitle);
+  setText(root, 'req-label-a', L.reqA);
+  setText(root, 'req-label-b', L.reqB);
+  setText(root, 'title-input', L.inputTitle);
+  setText(root, 'input-foot', L.inputFoot);
+  setText(root, 'title-kv', L.kvTitle);
+  setText(root, 'kv-label', L.kvLabel);
+  setText(root, 'title-mtp', L.mtpTitle);
+  setText(root, 'tar-label', L.tarLabel);
+  setText(root, 'title-mem', L.memTitle);
+  setText(root, 'mem-free-label', L.memFreeLabel);
+  setText(root, 'title-gpu', L.gpuTitle);
+}
 
 const RING_R = 8.5;
 const RING_STROKE = 1.9;
@@ -1110,7 +1337,7 @@ function setArc(root, id, ratio) {
 function ringCard(id, title, icon, arcId, valueId, sideHtml) {
   return (
     '<section class="card" id="' + id + '">' +
-    '<div class="card-head"><span class="card-icon">' + icon + '</span><span class="card-title">' + title + '</span></div>' +
+    '<div class="card-head"><span class="card-icon">' + icon + '</span><span class="card-title" id="title-' + id.replace('card-', '') + '">' + title + '</span></div>' +
     '<div class="card-body ring-body">' +
     '<div class="ring-wrap">' +
     '<svg class="ring" viewBox="0 0 20 20">' +
@@ -1126,7 +1353,7 @@ function ringCard(id, title, icon, arcId, valueId, sideHtml) {
 }
 
 /** 一次性建立静态结构（标题栏 / Hero / 卡片网格 / 底部栏）。 */
-function renderShell(root) {
+function renderShell(root, view = 'server') {
   root.innerHTML = [
     '<header class="hdr">',
     '  <div class="hdr-icon">' + ICONS.app + '</div>',
@@ -1150,17 +1377,17 @@ function renderShell(root) {
     '</section>',
     '<div class="grid" id="grid">',
     '  <section class="card" id="card-req">',
-    '    <div class="card-head"><span class="card-icon">' + ICONS.users + '</span><span class="card-title">请求状态</span></div>',
+    '    <div class="card-head"><span class="card-icon">' + ICONS.users + '</span><span class="card-title" id="title-req">请求状态</span></div>',
     '    <div class="card-body req">',
     '      <div class="req-line"><span class="req-num" id="req-active" style="color:var(--green)">--</span>',
-    '        <span class="req-label">活动</span>',
+    '        <span class="req-label" id="req-label-a">活动</span>',
     '        <span class="req-num" id="req-queued" style="color:var(--orange)">--</span>',
-    '        <span class="req-label">排队</span></div>',
+    '        <span class="req-label" id="req-label-b">排队</span></div>',
     '      <div class="bar" id="req-bar"><span class="bar-run" id="bar-run"></span><span class="bar-queue" id="bar-queue"></span></div>',
     '    </div>',
     '  </section>',
     '  <section class="card" id="card-input">',
-    '    <div class="card-head"><span class="card-icon">' + ICONS.download + '</span><span class="card-title">输入 Token</span></div>',
+    '    <div class="card-head"><span class="card-icon">' + ICONS.download + '</span><span class="card-title" id="title-input">输入 Token</span></div>',
     '    <div class="card-body input-body">',
     '      <div class="value-line"><span class="value-big" id="input-rate">--</span><span class="value-unit">tok/s</span></div>',
     '      <div class="foot-line"><span class="foot-icon">' + ICONS.doc + '</span><span id="input-foot">Prefill 均值</span></div>',
@@ -1176,9 +1403,9 @@ function renderShell(root) {
     ringCard('card-mem', '统一内存', ICONS.memory, 'mem-arc', 'mem-value',
       '<div id="mem-node">--</div>' +
       '<div class="green" id="mem-pair">--</div>' +
-      '<div>可用 <span id="mem-free">--</span></div>'),
+      '<div><span id="mem-free-label">可用</span> <span id="mem-free">--</span></div>'),
     '  <section class="card" id="card-gpu">',
-    '    <div class="card-head"><span class="card-icon">' + ICONS.gauge + '</span><span class="card-title">GPU 活跃度</span></div>',
+    '    <div class="card-head"><span class="card-icon">' + ICONS.gauge + '</span><span class="card-title" id="title-gpu">GPU 活跃度</span></div>',
     '    <div class="card-body gpu-body">',
     '      <div class="gpu-left"><div class="gpu-value" id="gpu-value">--</div><div class="gpu-state" id="gpu-state">--</div></div>',
     '      <svg class="gpu-bars" id="gpu-bars" viewBox="0 0 ' + BARS_W + ' ' + BARS_H + '"></svg>',
@@ -1194,6 +1421,7 @@ function renderShell(root) {
     '  </div>',
     '</footer>',
   ].join('\n');
+  applyViewLabels(root, view);
 }
 
 /** 可选：灵动岛样式的 tok/s 胶囊（?island=1），复刻参考照片顶部的实时活动。 */
@@ -1263,8 +1491,53 @@ function paintCards(root, s) {
   drawBars(root, s.gpu.history);
 }
 
+/** 客户端视图：只用真实可测的客户端指标；拿不到的一律 --。 */
+function paintClientCards(root, s) {
+  const c = s.client || {};
+  const okCount = Math.max(0, (c.probeCount || 0) - (c.failCount || 0));
+  setText(root, 'req-active', String(okCount));
+  setText(root, 'req-queued', String(c.failCount || 0));
+  const rate = Number.isFinite(c.successRate) ? c.successRate : 0;
+  setWidthPct(root, 'bar-run', rate * 100);
+  setWidthPct(root, 'bar-queue', (1 - rate) * 100);
+
+  setText(root, 'input-rate', formatRate(s.input.tokPerSec));
+  setText(root, 'input-foot', Number.isFinite(s.input.prefillAvgMs) ? Math.round(s.input.prefillAvgMs) + 'ms' : '--');
+
+  setText(root, 'kv-value', Number.isFinite(c.ttftP50) ? Math.round(c.ttftP50) + 'ms' : '--');
+  setText(root, 'kv-headroom', Number.isFinite(c.ttftP95) ? 'P95 ' + Math.round(c.ttftP95) + 'ms' : 'P95 --');
+  setText(root, 'kv-hit', '样本 ' + (c.probeCount || 0));
+  setArc(root, 'kv-arc', c.latencyScore);
+
+  setText(root, 'mtp-value', formatRate(c.rateP50));
+  setText(root, 'tar-value', formatRate(c.rateP95));
+  setArc(root, 'mtp-arc', c.rateScore);
+
+  setText(root, 'mem-value', formatRate(c.tokensOut));
+  setText(root, 'mem-pair', '输入 ' + formatRate(c.tokensIn));
+  setText(root, 'mem-node', '输出');
+  setText(root, 'mem-free', '$' + (Number.isFinite(c.cost) ? c.cost.toFixed(2) : '0.00'));
+  setArc(root, 'mem-arc', NaN);
+
+  setText(root, 'gpu-value', Number.isFinite(c.successRate) ? Math.round(c.successRate * 100) + '%' : '--');
+  setText(root, 'gpu-state', c.available ? '探测正常' : (c.probeCount ? '部分失败' : '等待首个样本'));
+  drawBars(root, Array.isArray(c.history) ? c.history : []);
+}
+
 /** 每帧更新：把快照写进 DOM。 */
 function paint(root, s) {
+  if (root.dataset.view === 'client') {
+    setText(root, 'model-name', s.model.name);
+    setText(root, 'model-sub', s.model.engine + ' · ' + s.model.nodes);
+    setText(root, 'link-text', s.status === 'error' ? '未连接' : s.status === 'stale' ? '连接异常' : 'API 已连接');
+    root.classList.toggle('is-degraded', s.status === 'stale' || s.status === 'error');
+    setText(root, 'out-rate', formatRate(s.output.tokPerSec));
+    setText(root, 'clock', s.clock);
+    const sp = root.querySelector('#spark-path');
+    if (sp) sp.setAttribute('d', sparklinePath(s.output.history, 41, 19, 2));
+    paintClientCards(root, s);
+    return;
+  }
   setText(root, 'model-name', s.model.name);
   setText(root, 'model-sub', s.model.engine + ' · ' + s.model.nodes);
   // 监控面板最危险的失效模式是"安静地显示过期数据"：stale 也必须看得见
@@ -1322,6 +1595,14 @@ function collectProbe(root, s, stats) {
   })();
   return {
     mode: 'test',
+    view: root.dataset.view || 'server',
+    // 原始数值（null 表示"未知"）：客户端视图里服务端内部量必须保持未知
+    raw: {
+      kvCacheUsage: Number.isFinite(s.kvCache.usage) ? s.kvCache.usage : null,
+      mtpTar: Number.isFinite(s.mtp.tar) ? s.mtp.tar : null,
+      memoryUsedGB: Number.isFinite(s.memory.usedGB) ? s.memory.usedGB : null,
+      gpuUtil: Number.isFinite(s.gpu.utilization) ? s.gpu.utilization : null,
+    },
     viewport: { w: innerWidth, h: innerHeight },
     panel: { w: r2(pr.width), h: r2(pr.height) },
     u: getComputedStyle(root).getPropertyValue('--u').trim(),
@@ -1464,6 +1745,8 @@ const tickN = Math.max(0, Number(params.get('tick') || 0));
 // 测试模式默认同步出结果（探针靠 --dump-dom 抓取，不能依赖 rAF 时序）；
 // ?raf=1 时才走真实渲染路径，用于验证"同帧多次更新只画一次"。
 const useRaf = !testMode || params.get('raf') === '1';
+// 视图：server（默认，逐像素对齐参考截图）/ client（云 API 客户端观测）
+const view = params.get('view') === 'client' ? 'client' : 'server';
 
 const panel = document.getElementById('panel');
 
@@ -1476,7 +1759,8 @@ layout();
 addEventListener('resize', layout);
 addEventListener('orientationchange', layout);
 
-renderShell(panel);
+panel.dataset.view = view;
+renderShell(panel, view);
 if (params.get('island') === '1') renderIsland();   // 可选：灵动岛胶囊，默认关闭
 
 /** 冻结时钟：把今天的时分秒固定下来，让探针输出可复现。 */
@@ -1511,7 +1795,36 @@ function onUpdate(s) {
 
 store.subscribe(onUpdate);
 
-if (testMode) {
+/** 客户端视图的确定性样本：数值固定，便于探针断言。 */
+function clientFixture(now, seedValue) {
+  const rnd = mulberry32(seedValue);
+  const history = [];
+  let v = 180;
+  for (let i = 0; i < 60; i++) {
+    v = Math.max(40, v + (rnd() - 0.5) * 60);
+    history.push(Math.round(v));
+  }
+  history[59] = 210;
+  return {
+    view: 'client',
+    status: 'live',
+    clock: formatClock(new Date(now)),
+    updatedAt: now,
+    model: { name: 'deepseek-chat', engine: 'OpenAI 兼容', nodes: 'API' },
+    output: { tokPerSec: 210, history },
+    input: { tokPerSec: 3400, prefillAvgMs: 320 },
+    requests: { active: 1, queued: 0, capacity: 1 },
+    client: {
+      ttftP50: 320, ttftP95: 900, rateP50: 210, rateP95: 290, probeCount: 42, failCount: 2,
+      successRate: 0.95, available: false, tokensIn: 1000000, tokensOut: 500000, cost: 6, lastError: null,
+      history: history.slice(-15),
+    },
+  };
+}
+
+if (testMode && view === 'client') {
+  store.update(mapClientPayload(clientFixture(frozenNow(), seed), emptySnapshot(Date.now())));
+} else if (testMode) {
   const rnd = mulberry32(seed);
   let s = initialSnapshot(frozenNow());
   stats.samples = 1;
@@ -1545,6 +1858,10 @@ if (testMode) {
     // 数据源不可达时的降级帧：状态变 error，其余字段沿用最后一帧（曲线保留、布局不变）
     store.update({ ...s, status: 'error' });
   }
+} else if (view === 'client') {
+  // 客户端视图连本机采集器；key 只存在采集器的配置文件里，页面里没有
+  const endpoint = params.get('endpoint') || 'http://127.0.0.1:8787/snapshot';
+  createClientSource({ endpoint, intervalMs: 1000, now: () => Date.now() }).start((s) => store.update(s));
 } else {
   pickSource().start((s) => store.update(s));
 }

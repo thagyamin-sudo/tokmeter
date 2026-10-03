@@ -30,6 +30,7 @@ export const MODULES = [
   'src/sources/vllm-metrics.js',
   'src/sources/mock.js',
   'src/sources/http.js',
+  'src/sources/client.js',
   'src/render.js',
   'src/scheduler.js',
   'src/app.js',

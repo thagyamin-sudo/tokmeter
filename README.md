@@ -58,11 +58,46 @@ python -m http.server 8000
 
 本项目**不内置代理服务**，以保持零依赖。
 
+## 客户端视图：监控云 API（OpenAI 兼容）
+
+云 API 不会暴露 KV Cache / GPU / 显存这些**服务端内部量**，所以这一版不装服务端指标，
+只显示真实可测的客户端指标，拿不到的一律显示 `--`（有测试钉住"不许编造 0"）。
+
+**三步上手：**
+
+```bash
+cp collector.config.example.json collector.config.json   # 填 baseUrl / apiKey / model
+node collector.js                                        # 启动采集器（只监听 127.0.0.1）
+# 打开面板：llm-monitor.html?view=client
+```
+
+**采集器做两件事：**
+
+1. **主动探测**（默认）：每 `probeEveryMs` 发一次小流式请求（默认 15 秒、max_tokens 24，最小间隔 5 秒），量 TTFT 与真实 tok/s —— 不用改你任何应用
+2. **被动统计**（`"proxy": true`）：把应用的 `base_url` 指到 `http://127.0.0.1:8787/v1`，统计真实流量、token 用量与成本
+
+**安全**：`apiKey` 只存在 `collector.config.json`（已 gitignore），面板页面里没有 key，采集器只监听本机、只暴露 `GET /snapshot`，且响应里绝不含 key（测试覆盖）。
+
+**卡片对应关系**（默认视图逐像素不变，只有 `?view=client` 才切换）：
+
+| 面板卡片 | 客户端视图显示 |
+| --- | --- |
+| 实时输出 Token | 实测输出 tok/s（流式测速） |
+| 探测状态 | 窗口内成功/失败数 + 成功率进度条 |
+| 输入 Token | Prefill 速度（prompt_tokens ÷ TTFT） |
+| 响应延迟 | 首 Token P50（环越多越快），侧栏 P95 与样本数 |
+| 吞吐分位 | P50 tok/s，侧栏 P95 |
+| 今日用量 | 输出/输入 token 累计 + 估算成本 |
+| 可用率 | 窗口内成功率 + 柱条（每次探测的速率） |
+
+**⚠️ 边界**：客户端视图只看得到"**经过采集器**"的请求。主动探测反映的是你账号当前调用的响应速度；
+要统计你自己应用的真实流量与成本，必须把应用的 base_url 指向采集器（被动模式）。
+
 ## 开发与验证
 
 ```bash
-node --test                                      # 61 个单测（纯逻辑 + 构建 + 对抗性边界 + 真实 HTTP 端到端）
-node tools/probe.js                              # E2E 探针：真实 390x844 视口 + 320x700 窄屏，65 项断言
+node --test                                      # 86 个单测（纯逻辑 + 构建 + 对抗性边界 + 真实 HTTP 端到端 + 采集器）
+node tools/probe.js                              # E2E 探针：服务端视图 + 客户端视图 + 320x700 窄屏，90 项断言
 node tools/probe.js --target=llm-monitor.html    # 同一套断言跑在离线单文件产物上
 node build.js                                    # 由 src/ + styles.css 重新生成 llm-monitor.html
 node tools/shot.js --out=ref/mine.png            # 截图，用于与 ref/ 参考图并排比对

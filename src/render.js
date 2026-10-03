@@ -25,6 +25,58 @@ const ICONS = {
 };
 export { ICONS };
 
+/**
+ * 视图标签表。服务端视图与参考截图逐字一致；客户端视图把"云 API 不可能提供"的
+ * 服务端指标换成等价的可得指标，绝不沿用服务端标题去装服务端数据。
+ */
+const VIEW_LABELS = {
+  server: {
+    reqTitle: '请求状态',
+    reqA: '活动',
+    reqB: '排队',
+    inputTitle: '输入 Token',
+    inputFoot: 'Prefill 均值',
+    kvTitle: 'KV Cache',
+    kvLabel: '占用率',
+    mtpTitle: 'MTP',
+    tarLabel: 'TAR',
+    memTitle: '统一内存',
+    memFreeLabel: '可用',
+    gpuTitle: 'GPU 活跃度',
+  },
+  client: {
+    reqTitle: '探测状态',
+    reqA: '成功',
+    reqB: '失败',
+    inputTitle: '输入 Token',
+    inputFoot: 'TTFT 均值',
+    kvTitle: '响应延迟',
+    kvLabel: '首 Token',
+    mtpTitle: '吞吐分位',
+    tarLabel: 'P95',
+    memTitle: '今日用量',
+    memFreeLabel: '成本',
+    gpuTitle: '可用率',
+  },
+};
+
+/** 按视图改文案（DOM 结构不变，颜色/布局都不动）。 */
+export function applyViewLabels(root, view) {
+  const L = VIEW_LABELS[view === 'client' ? 'client' : 'server'];
+  setText(root, 'title-req', L.reqTitle);
+  setText(root, 'req-label-a', L.reqA);
+  setText(root, 'req-label-b', L.reqB);
+  setText(root, 'title-input', L.inputTitle);
+  setText(root, 'input-foot', L.inputFoot);
+  setText(root, 'title-kv', L.kvTitle);
+  setText(root, 'kv-label', L.kvLabel);
+  setText(root, 'title-mtp', L.mtpTitle);
+  setText(root, 'tar-label', L.tarLabel);
+  setText(root, 'title-mem', L.memTitle);
+  setText(root, 'mem-free-label', L.memFreeLabel);
+  setText(root, 'title-gpu', L.gpuTitle);
+}
+
 const RING_R = 8.5;
 const RING_STROKE = 1.9;
 const BARS_W = 21;
@@ -57,7 +109,7 @@ function setArc(root, id, ratio) {
 function ringCard(id, title, icon, arcId, valueId, sideHtml) {
   return (
     '<section class="card" id="' + id + '">' +
-    '<div class="card-head"><span class="card-icon">' + icon + '</span><span class="card-title">' + title + '</span></div>' +
+    '<div class="card-head"><span class="card-icon">' + icon + '</span><span class="card-title" id="title-' + id.replace('card-', '') + '">' + title + '</span></div>' +
     '<div class="card-body ring-body">' +
     '<div class="ring-wrap">' +
     '<svg class="ring" viewBox="0 0 20 20">' +
@@ -73,7 +125,7 @@ function ringCard(id, title, icon, arcId, valueId, sideHtml) {
 }
 
 /** 一次性建立静态结构（标题栏 / Hero / 卡片网格 / 底部栏）。 */
-export function renderShell(root) {
+export function renderShell(root, view = 'server') {
   root.innerHTML = [
     '<header class="hdr">',
     '  <div class="hdr-icon">' + ICONS.app + '</div>',
@@ -97,17 +149,17 @@ export function renderShell(root) {
     '</section>',
     '<div class="grid" id="grid">',
     '  <section class="card" id="card-req">',
-    '    <div class="card-head"><span class="card-icon">' + ICONS.users + '</span><span class="card-title">请求状态</span></div>',
+    '    <div class="card-head"><span class="card-icon">' + ICONS.users + '</span><span class="card-title" id="title-req">请求状态</span></div>',
     '    <div class="card-body req">',
     '      <div class="req-line"><span class="req-num" id="req-active" style="color:var(--green)">--</span>',
-    '        <span class="req-label">活动</span>',
+    '        <span class="req-label" id="req-label-a">活动</span>',
     '        <span class="req-num" id="req-queued" style="color:var(--orange)">--</span>',
-    '        <span class="req-label">排队</span></div>',
+    '        <span class="req-label" id="req-label-b">排队</span></div>',
     '      <div class="bar" id="req-bar"><span class="bar-run" id="bar-run"></span><span class="bar-queue" id="bar-queue"></span></div>',
     '    </div>',
     '  </section>',
     '  <section class="card" id="card-input">',
-    '    <div class="card-head"><span class="card-icon">' + ICONS.download + '</span><span class="card-title">输入 Token</span></div>',
+    '    <div class="card-head"><span class="card-icon">' + ICONS.download + '</span><span class="card-title" id="title-input">输入 Token</span></div>',
     '    <div class="card-body input-body">',
     '      <div class="value-line"><span class="value-big" id="input-rate">--</span><span class="value-unit">tok/s</span></div>',
     '      <div class="foot-line"><span class="foot-icon">' + ICONS.doc + '</span><span id="input-foot">Prefill 均值</span></div>',
@@ -123,9 +175,9 @@ export function renderShell(root) {
     ringCard('card-mem', '统一内存', ICONS.memory, 'mem-arc', 'mem-value',
       '<div id="mem-node">--</div>' +
       '<div class="green" id="mem-pair">--</div>' +
-      '<div>可用 <span id="mem-free">--</span></div>'),
+      '<div><span id="mem-free-label">可用</span> <span id="mem-free">--</span></div>'),
     '  <section class="card" id="card-gpu">',
-    '    <div class="card-head"><span class="card-icon">' + ICONS.gauge + '</span><span class="card-title">GPU 活跃度</span></div>',
+    '    <div class="card-head"><span class="card-icon">' + ICONS.gauge + '</span><span class="card-title" id="title-gpu">GPU 活跃度</span></div>',
     '    <div class="card-body gpu-body">',
     '      <div class="gpu-left"><div class="gpu-value" id="gpu-value">--</div><div class="gpu-state" id="gpu-state">--</div></div>',
     '      <svg class="gpu-bars" id="gpu-bars" viewBox="0 0 ' + BARS_W + ' ' + BARS_H + '"></svg>',
@@ -141,6 +193,7 @@ export function renderShell(root) {
     '  </div>',
     '</footer>',
   ].join('\n');
+  applyViewLabels(root, view);
 }
 
 /** 可选：灵动岛样式的 tok/s 胶囊（?island=1），复刻参考照片顶部的实时活动。 */
@@ -210,8 +263,53 @@ export function paintCards(root, s) {
   drawBars(root, s.gpu.history);
 }
 
+/** 客户端视图：只用真实可测的客户端指标；拿不到的一律 --。 */
+export function paintClientCards(root, s) {
+  const c = s.client || {};
+  const okCount = Math.max(0, (c.probeCount || 0) - (c.failCount || 0));
+  setText(root, 'req-active', String(okCount));
+  setText(root, 'req-queued', String(c.failCount || 0));
+  const rate = Number.isFinite(c.successRate) ? c.successRate : 0;
+  setWidthPct(root, 'bar-run', rate * 100);
+  setWidthPct(root, 'bar-queue', (1 - rate) * 100);
+
+  setText(root, 'input-rate', formatRate(s.input.tokPerSec));
+  setText(root, 'input-foot', Number.isFinite(s.input.prefillAvgMs) ? Math.round(s.input.prefillAvgMs) + 'ms' : '--');
+
+  setText(root, 'kv-value', Number.isFinite(c.ttftP50) ? Math.round(c.ttftP50) + 'ms' : '--');
+  setText(root, 'kv-headroom', Number.isFinite(c.ttftP95) ? 'P95 ' + Math.round(c.ttftP95) + 'ms' : 'P95 --');
+  setText(root, 'kv-hit', '样本 ' + (c.probeCount || 0));
+  setArc(root, 'kv-arc', c.latencyScore);
+
+  setText(root, 'mtp-value', formatRate(c.rateP50));
+  setText(root, 'tar-value', formatRate(c.rateP95));
+  setArc(root, 'mtp-arc', c.rateScore);
+
+  setText(root, 'mem-value', formatRate(c.tokensOut));
+  setText(root, 'mem-pair', '输入 ' + formatRate(c.tokensIn));
+  setText(root, 'mem-node', '输出');
+  setText(root, 'mem-free', '$' + (Number.isFinite(c.cost) ? c.cost.toFixed(2) : '0.00'));
+  setArc(root, 'mem-arc', NaN);
+
+  setText(root, 'gpu-value', Number.isFinite(c.successRate) ? Math.round(c.successRate * 100) + '%' : '--');
+  setText(root, 'gpu-state', c.available ? '探测正常' : (c.probeCount ? '部分失败' : '等待首个样本'));
+  drawBars(root, Array.isArray(c.history) ? c.history : []);
+}
+
 /** 每帧更新：把快照写进 DOM。 */
 export function paint(root, s) {
+  if (root.dataset.view === 'client') {
+    setText(root, 'model-name', s.model.name);
+    setText(root, 'model-sub', s.model.engine + ' · ' + s.model.nodes);
+    setText(root, 'link-text', s.status === 'error' ? '未连接' : s.status === 'stale' ? '连接异常' : 'API 已连接');
+    root.classList.toggle('is-degraded', s.status === 'stale' || s.status === 'error');
+    setText(root, 'out-rate', formatRate(s.output.tokPerSec));
+    setText(root, 'clock', s.clock);
+    const sp = root.querySelector('#spark-path');
+    if (sp) sp.setAttribute('d', sparklinePath(s.output.history, 41, 19, 2));
+    paintClientCards(root, s);
+    return;
+  }
   setText(root, 'model-name', s.model.name);
   setText(root, 'model-sub', s.model.engine + ' · ' + s.model.nodes);
   // 监控面板最危险的失效模式是"安静地显示过期数据"：stale 也必须看得见
@@ -269,6 +367,14 @@ export function collectProbe(root, s, stats) {
   })();
   return {
     mode: 'test',
+    view: root.dataset.view || 'server',
+    // 原始数值（null 表示"未知"）：客户端视图里服务端内部量必须保持未知
+    raw: {
+      kvCacheUsage: Number.isFinite(s.kvCache.usage) ? s.kvCache.usage : null,
+      mtpTar: Number.isFinite(s.mtp.tar) ? s.mtp.tar : null,
+      memoryUsedGB: Number.isFinite(s.memory.usedGB) ? s.memory.usedGB : null,
+      gpuUtil: Number.isFinite(s.gpu.utilization) ? s.gpu.utilization : null,
+    },
     viewport: { w: innerWidth, h: innerHeight },
     panel: { w: r2(pr.width), h: r2(pr.height) },
     u: getComputedStyle(root).getPropertyValue('--u').trim(),
