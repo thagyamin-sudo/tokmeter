@@ -1,7 +1,7 @@
 {
   "name": "tokmeter",
   "productName": "Tokmeter",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Tokmeter（词元表）— LLM 状态监控桌面悬浮窗（Electron 外壳 + 内置采集器）",
   "private": true,
   "type": "module",

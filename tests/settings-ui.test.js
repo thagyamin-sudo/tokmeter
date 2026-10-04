@@ -4,7 +4,15 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { NO_COLLECTOR_HINT, configBaseFromEndpoint, buildConfigPatch } from '../src/settings.js';
+import {
+  NO_COLLECTOR_HINT,
+  PROBE_HINT_FALLBACK,
+  PROBE_OFF_HINT,
+  configBaseFromEndpoint,
+  buildConfigPatch,
+  formatProbeTokens,
+  probeHintText,
+} from '../src/settings.js';
 
 test('设置端点：从 snapshot 端点推出采集器根地址', () => {
   assert.equal(configBaseFromEndpoint('http://127.0.0.1:8787/snapshot'), 'http://127.0.0.1:8787');
@@ -51,6 +59,40 @@ test('提交补丁：数字转数字、proxy 归一成布尔、脱敏 key 原样
   assert.deepEqual(patch.pricing, { inPerM: 0.27, outPerM: 1.1 });
   // 采集器把「纯星号」当不改动，所以页面可以直接回传脱敏值
   assert.equal(patch.apiKey, 'sk-***c3a3');
+});
+
+test('成本提示：开着时给"每天多少次 / 约多少 token"，关着时明说不产生额外调用', () => {
+  const on = probeHintText({ enabled: true, everyMs: 60000, probeMaxTokens: 24, promptTokensEstimate: 24 });
+  assert.equal(on, '每 60 秒 1 次 ≈ 每天 1440 次调用、约 7 万 token（会消耗你的 token，走你的计费）');
+  assert.match(on, /每天/);
+  assert.match(on, /会消耗你的 token/);
+
+  const off = probeHintText({ enabled: false, everyMs: 60000, probeMaxTokens: 24, promptTokensEstimate: 24 });
+  assert.equal(off, PROBE_OFF_HINT);
+  assert.equal(off, '已关闭主动探测：只统计经过本机的流量，不产生额外调用');
+
+  // 间隔/单价一改，文案里的数字必须跟着重算（30 秒 = 2880 次/天）
+  assert.match(probeHintText({ enabled: true, everyMs: 30000, probeMaxTokens: 24, promptTokensEstimate: 100 }),
+    /每天 2880 次调用、约 36 万 token/);
+  // 没读到采集器的 probe 块：给默认口径的兜底，不编造属于这台机器的数字
+  assert.equal(probeHintText(null), PROBE_HINT_FALLBACK);
+  assert.match(PROBE_HINT_FALLBACK, /每天/);
+  assert.match(PROBE_HINT_FALLBACK, /会消耗你的 token/);
+});
+
+test('token 估算的显示口径：上万折成"万"，小数值给原数', () => {
+  assert.equal(formatProbeTokens(69120), '7 万');
+  assert.equal(formatProbeTokens(357120), '36 万');
+  assert.equal(formatProbeTokens(500), '500');
+  assert.equal(formatProbeTokens(0), '0');
+  assert.equal(formatProbeTokens(NaN), '0');
+});
+
+test('提交补丁：probe 只在明确给了布尔值时才提交（不提 = 不改动）', () => {
+  assert.equal('probe' in buildConfigPatch({ baseUrl: 'https://x/v1', apiKey: '', proxy: false }), false);
+  assert.equal(buildConfigPatch({ probe: true }).probe, true);
+  assert.equal(buildConfigPatch({ probe: false }).probe, false);
+  assert.equal('probe' in buildConfigPatch({ probe: 'false' }), false, '字符串不是布尔意图，不能被当成"打开/关闭"');
 });
 
 test('没有采集器时的提示文案是给用户看的可操作那句话', () => {

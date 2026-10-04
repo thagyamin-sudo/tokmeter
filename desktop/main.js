@@ -26,7 +26,8 @@ import { ensureConfigFile } from './lib/config-file.js';
 import { getState, loadState, saveState } from './lib/state.js';
 import { importCollectorModules, startCollector } from './lib/collector-host.js';
 import { applyAlwaysOnTop, applyWidgetCss, buildPanelUrl, createWidgetWindow } from './lib/widget-window.js';
-import { createTray } from './lib/tray.js';
+import { createTray, buildTemplate } from './lib/tray.js';
+import { createProbePolicy } from './lib/probe-policy.js';
 
 // ---------- 启动参数 ----------
 const ARGV = process.argv.slice(1);
@@ -58,6 +59,12 @@ const ctx = {
 };
 
 const log = (msg) => console.log('[tokmeter] ' + msg);
+
+/**
+ * 隐藏到托盘就停掉主动探测（省 token），重新显示再恢复。
+ * 策略本身的开关在 state.json 的 pauseProbeWhenHidden（默认 true），托盘菜单可勾选。
+ */
+const probePolicy = createProbePolicy({ getCollector: () => ctx.collector.instance, log });
 
 // ---------- 开机自启 ----------
 function autoStartArgs() {
@@ -91,7 +98,24 @@ function collectorStatusText() {
   const c = ctx.collector;
   if (!c.ok) return '采集器：未启动（' + (c.stage === 'listen' ? '端口 ' + c.port + ' 被占用' : '配置有误') + '）';
   const status = c.instance && c.instance.status ? c.instance.status : 'connecting';
-  return '采集器：127.0.0.1:' + c.port + ' · ' + status;
+  // 探测停着这件事必须看得见：状态栏是唯一常驻的显示面
+  const probing = c.instance && typeof c.instance.isProbing === 'function' ? c.instance.isProbing() : true;
+  return '采集器：127.0.0.1:' + c.port + ' · ' + status + (probing ? '' : ' · 探测已暂停');
+}
+
+/** 把「窗口可见性 + pauseProbeWhenHidden」落到采集器上；返回策略结果便于日志/自检。 */
+function syncProbeWithVisibility() {
+  probePolicy.setEnabled(getState().pauseProbeWhenHidden !== false);
+  const out = probePolicy.apply(windowVisible());
+  if (out.changed) refreshTray();
+  return out;
+}
+
+function setPauseProbeWhenHidden(flag) {
+  ctx.state = saveState({ pauseProbeWhenHidden: !!flag });
+  const out = syncProbeWithVisibility();
+  log('隐藏时暂停探测 -> ' + (flag ? '开' : '关') + '（' + out.reason + '）');
+  refreshTray();
 }
 
 function refreshTray() {
@@ -272,10 +296,12 @@ function createWindow() {
   win.on('show', () => {
     const b = win.getBounds();
     log('窗口显示中 bounds=' + JSON.stringify(b) + ' 置顶=' + win.isAlwaysOnTop() + ' 可见=' + win.isVisible());
+    syncProbeWithVisibility();
     refreshTray();
   });
   win.on('hide', () => {
     persistBounds();
+    syncProbeWithVisibility();
     refreshTray();
   });
   // 关窗 = 收进托盘（真正退出走托盘菜单的「退出 Tokmeter」）
@@ -303,6 +329,8 @@ function createTrayUI() {
     setView: (v) => { void setView(v); },
     autoStart: getAutoStart,
     setAutoStart,
+    pauseProbeWhenHidden: () => getState().pauseProbeWhenHidden !== false,
+    setPauseProbeWhenHidden,
     openConfig: () => { void openConfig(); },
     openSettings: () => { void openSettings(); },
     revealConfig: () => { revealConfig(); },
@@ -465,6 +493,47 @@ async function runSelfTest() {
   }
 
   add('开机自启读取（未写入注册表）', true, 'openAtLogin=' + getAutoStart());
+
+  // 隐藏到托盘暂停探测：菜单项 + 状态机（用假采集器，不发任何网络请求）
+  add('state.pauseProbeWhenHidden 是布尔值（默认 true）', typeof getState().pauseProbeWhenHidden === 'boolean',
+    'pauseProbeWhenHidden=' + getState().pauseProbeWhenHidden);
+  try {
+    const items = buildTemplate({
+      statusText: () => '采集器：test',
+      windowVisible: () => true,
+      toggleWindow: () => {},
+      alwaysOnTop: () => true,
+      setAlwaysOnTop: () => {},
+      view: () => 'client',
+      setView: () => {},
+      autoStart: () => false,
+      setAutoStart: () => {},
+      pauseProbeWhenHidden: () => true,
+      setPauseProbeWhenHidden: () => {},
+      openConfig: () => {},
+      openSettings: () => {},
+      revealConfig: () => {},
+      quit: () => {},
+    });
+    const item = items.find((i) => i && i.label === '隐藏时暂停探测');
+    add('托盘菜单含「隐藏时暂停探测」（可勾选、默认勾上）',
+      !!item && item.type === 'checkbox' && item.checked === true,
+      JSON.stringify(item ? { label: item.label, type: item.type, checked: item.checked } : null));
+  } catch (err) {
+    add('托盘菜单含「隐藏时暂停探测」', false, err.message);
+  }
+  try {
+    const fake = { on: true, setProbeEnabled(v) { this.on = v === true; return {}; }, isProbing() { return this.on; } };
+    const policy = createProbePolicy({ getCollector: () => fake, log: () => {} });
+    const hidden = policy.apply(false);
+    const offAfterHide = fake.on;
+    const shown = policy.apply(true);
+    add('隐藏 → 暂停探测 / 重新显示 → 恢复',
+      hidden.changed === true && hidden.paused === true && offAfterHide === false && shown.changed === true && fake.on === true,
+      '隐藏 ' + JSON.stringify(hidden) + ' 暂停后 isProbing=' + offAfterHide + ' 显示 ' + JSON.stringify(shown) + ' 恢复后 isProbing=' + fake.on);
+  } catch (err) {
+    add('隐藏 → 暂停探测 / 重新显示 → 恢复', false, err.message);
+  }
 
   if (SHOT_PATH) {
     try {

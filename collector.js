@@ -23,7 +23,13 @@ const server = createServer(collector.handler);
 
 server.listen(config.port, '127.0.0.1', () => {
   console.log('采集器已启动：http://127.0.0.1:' + config.port + '/snapshot');
-  console.log('目标 ' + config.model + ' @ ' + config.baseUrl + '，每 ' + config.probeEveryMs + 'ms 主动探测一次');
+  if (config.probe === false) {
+    console.log('主动探测已关闭（probe: false）：只统计经过本机的流量，不产生任何额外调用');
+  } else {
+    console.log('目标 ' + config.model + ' @ ' + config.baseUrl + '，每 ' + config.probeEveryMs + 'ms 主动探测一次（约 ' +
+      Math.round(86400000 / config.probeEveryMs) + ' 次/天，走你的真实计费）');
+    console.log('想省 token：面板设置里关掉「启用主动探测」，或把 probe 改成 false');
+  }
   console.log('打开面板：llm-monitor.html?view=client （或 index.html?view=client）');
   console.log('面板页脚齿轮 / 点标题栏右侧状态区 → 面板内设置（GET/POST http://127.0.0.1:' + config.port + '/config）');
   if (config.proxy) console.log('转发已开启：把应用的 base_url 指到 http://127.0.0.1:' + config.port + '/v1 即可统计真实流量');

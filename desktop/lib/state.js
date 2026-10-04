@@ -10,6 +10,7 @@ export const DEFAULT_STATE = {
   bounds: { x: null, y: null, width: 380, height: 620 },
   alwaysOnTop: true,
   view: 'client',
+  pauseProbeWhenHidden: true,   // 悬浮窗收进托盘时暂停主动探测（重新显示时恢复）
 };
 
 let cache = null;
@@ -31,6 +32,8 @@ function coerce(raw) {
     },
     alwaysOnTop: merged.alwaysOnTop !== false,
     view: merged.view === 'server' ? 'server' : 'client',
+    // 只有显式的 false 才是关：老 state.json 里没这个字段 → 按默认 true（省 token 是默认行为）
+    pauseProbeWhenHidden: merged.pauseProbeWhenHidden !== false,
   };
 }
 

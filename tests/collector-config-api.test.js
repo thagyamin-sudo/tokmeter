@@ -19,7 +19,25 @@ import { join } from 'node:path';
 import { createCollector } from '../collector/server.js';
 import { normalizeConfig } from '../collector/config.js';
 
-const SECRET = 'sk-rnCnZA4aEdTaexWiE78eD7DbC0Dd46Ee933274A17d5fCdA3';
+/**
+ * 测试用的**假 key**（不是任何人的真 key）。
+ * 尾部固定为 CdA3：下面要断言脱敏结果恰好是 `sk-***CdA3`。
+ * ！！绝对不要把真的 apiKey 抄进这个文件——仓库是公开的，历史里也删不掉。
+ */
+const SECRET = 'sk-FIXTURE000000000000000000000000000000000000CdA3';
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** 轮询等待条件成立：探测是异步的，别拿一个魔法数字的 sleep 赌它跑完。 */
+async function waitFor(cond, { timeoutMs = 2000, stepMs = 10 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const v = cond();
+    if (v) return v;
+    if (Date.now() > deadline) return null;
+    await sleep(stepMs);
+  }
+}
 
 /** 收摊：先断连接再 close，否则 keep-alive 会让进程不退出。 */
 function closeServer(t, server) {
@@ -51,20 +69,24 @@ async function startUpstream(t, { fail = false, chunks = ['你', '好', '呀'] }
 }
 
 /** 起一个采集器 + 真 HTTP 服务，配置写在临时文件里。 */
-async function setup(t, { baseUrl = 'https://api.example.com/v1', extra = {}, raw = null } = {}) {
+async function setup(t, { baseUrl = 'https://api.example.com/v1', extra = {}, raw = null, fetchImpl = fetch } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'tokmeter-cfg-'));
   const configPath = join(dir, 'collector.config.json');
   const initial = raw || { baseUrl, apiKey: SECRET, model: 'test-model', port: 8787, probeEveryMs: 15000, ...extra };
   writeFileSync(configPath, JSON.stringify(initial, null, 2) + '\n', 'utf8');
   const config = normalizeConfig(initial);
   const logs = [];
-  const col = createCollector({ config, configPath, log: (m) => logs.push(m) });
+  // 记上游调用次数：探测"到底发没发请求"只能数这个，probeCount 是采样后的结果
+  const calls = { n: 0 };
+  const countedFetch = (url, init) => { calls.n += 1; return fetchImpl(url, init); };
+  const col = createCollector({ config, configPath, log: (m) => logs.push(m), fetchImpl: countedFetch });
   const server = closeServer(t, createServer(col.handler));
   await new Promise((ok) => server.listen(0, '127.0.0.1', ok));
   t.after(() => col.stop());
   const base = 'http://127.0.0.1:' + server.address().port;
   return {
     col, config, configPath, logs, server, base,
+    fetchCalls: () => calls.n,
     readFile: () => JSON.parse(readFileSync(configPath, 'utf8')),
     readText: () => readFileSync(configPath, 'utf8'),
     get: (p) => fetch(base + p),
@@ -88,7 +110,7 @@ test('GET /config：apiKey 脱敏成 sk-***+末4位，带 CORS 头', async (t) =
   // 脱敏值不得包含中间的 key 片段，也不得出现完整 key
   const text = JSON.stringify(body);
   assert.equal(text.includes(SECRET), false);
-  assert.equal(text.includes('ZA4aEdTaexWiE78eD7DbC0Dd46Ee'), false);
+  assert.equal(text.includes('FIXTURE0000000000000000000000000000000'), false);
 });
 
 test('GET /config：没填 key 时返回空串（不是 ***）', async (t) => {
@@ -270,3 +292,147 @@ test('POST /config：没有配置文件路径时给出可读错误（不是静�
   assert.equal(res.status, 500);
   assert.match(body.error.message, /配置文件/);
 });
+
+// ---------- v0.2.1：主动探测总开关 / 暂停恢复 / 每天成本估算 ----------
+
+test('normalizeConfig：probe 只认布尔 false，其余一律按默认 true；默认间隔改成 60 秒', () => {
+  const base = { baseUrl: 'https://x/v1', apiKey: 'k', model: 'm' };
+  assert.equal(normalizeConfig(base).probe, true);
+  assert.equal(normalizeConfig({ ...base, probe: true }).probe, true);
+  assert.equal(normalizeConfig({ ...base, probe: false }).probe, false);
+  // 非布尔（字符串 "false" / 0 / null）都不是"关"，一律回默认 true —— 半懂不懂的写法不会静默烧钱
+  assert.equal(normalizeConfig({ ...base, probe: 'false' }).probe, true);
+  assert.equal(normalizeConfig({ ...base, probe: 0 }).probe, true);
+  assert.equal(normalizeConfig({ ...base, probe: null }).probe, true);
+  // 15 秒一次 = 5760 次/天（用户抱怨的那条），默认必须已经是 60 秒
+  assert.equal(normalizeConfig(base).probeEveryMs, 60000);
+});
+
+test('probe=false：启动后不挂定时器 —— 一次上游请求都不发，probeCount 不增长', async (t) => {
+  const up = await startUpstream(t);
+  const s = await setup(t, { baseUrl: up.baseUrl, extra: { probe: false, probeEveryMs: 5000 } });
+  s.col.start();
+  await sleep(250);
+  assert.equal(s.fetchCalls(), 0, 'probe:false 时不得发任何探测请求');
+  const snap = s.col.snapshotPayload();
+  assert.equal(snap.client.probeCount, 0);
+  assert.equal(snap.probe.enabled, false);
+  assert.equal(snap.probe.everyMs, 5000);
+  assert.equal(snap.probe.probesPerDay, 0);
+  assert.equal(snap.probe.tokensPerDayEstimate, 0);
+  assert.equal(s.readFile().probe, false, '总开关要原样留在配置文件里');
+
+  const view = (await (await s.get('/config')).json()).config;
+  assert.equal(view.probe.enabled, false);
+  assert.equal(view.probe.probesPerDay, 0);
+  assert.equal(view.probe.tokensPerDayEstimate, 0);
+});
+
+test('POST /probe：暂停后不再增长、恢复后继续增长，且运行时暂停不写配置文件', async (t) => {
+  const up = await startUpstream(t);
+  const s = await setup(t, { baseUrl: up.baseUrl, extra: { probeEveryMs: 5000 } });
+  s.col.start();
+  assert.ok(await waitFor(() => s.col.snapshotPayload().client.probeCount >= 1), '首次探测没回来');
+  const afterStart = s.fetchCalls();
+
+  const off = await s.post('/probe', { enabled: false });
+  const offBody = await off.json();
+  assert.equal(off.status, 200);
+  assert.equal(off.headers.get('access-control-allow-origin'), '*');
+  assert.equal(offBody.ok, true);
+  assert.equal(offBody.probe.enabled, false);
+  assert.equal(offBody.probe.probesPerDay, 0);
+  assert.equal(offBody.probe.tokensPerDayEstimate, 0);
+
+  const pausedCount = s.col.snapshotPayload().client.probeCount;
+  await sleep(200);
+  assert.equal(s.fetchCalls(), afterStart, '暂停后不得再发探测请求');
+  assert.equal(s.col.snapshotPayload().client.probeCount, pausedCount, '暂停后 probeCount 不得增长');
+  // 配置文件里本来就没有 probe 键（setup 写的原始配置没这个字段）→ 它必须仍然是"没被碰过"
+  assert.equal('probe' in s.readFile(), false, '/probe 是临时暂停，不得往配置文件里写 probe');
+  assert.equal(s.col.snapshotPayload().probe.enabled, false);
+
+  const on = await s.post('/probe', { enabled: true });
+  const onBody = await on.json();
+  assert.equal(on.status, 200);
+  assert.equal(onBody.probe.enabled, true);
+  assert.equal(onBody.probe.probesPerDay, Math.round(86400000 / 5000));
+  assert.ok(await waitFor(() => s.col.snapshotPayload().client.probeCount > pausedCount), '恢复后没有继续探测');
+  assert.ok(s.fetchCalls() > afterStart, '恢复后必须真的又发请求');
+
+  // 非法 body 必须是 400 + 中文，而不是静默当成 false
+  const bad = await s.post('/probe', { enabled: 'yes' });
+  const badBody = await bad.json();
+  assert.equal(bad.status, 400);
+  assert.match(badBody.error.message, /enabled/);
+  assert.equal(s.col.snapshotPayload().probe.enabled, true, '非法请求不得改状态');
+  const wrongMethod = await s.get('/probe');
+  assert.equal(wrongMethod.status, 405);
+});
+
+test('probe 块：按已知 everyMs 与最近一次成功探测的 promptTokens 算 probesPerDay / tokensPerDayEstimate', async (t) => {
+  // 假上游的 usage 固定 prompt_tokens = 7
+  const up = await startUpstream(t);
+  const s = await setup(t, { baseUrl: up.baseUrl, extra: { probeEveryMs: 60000, probeMaxTokens: 24 } });
+  s.col.start();
+  assert.ok(await waitFor(() => s.col.snapshotPayload().probe.promptTokensEstimate === 7), '没等到成功样本的 promptTokens');
+
+  const probe = s.col.snapshotPayload().probe;
+  assert.equal(probe.enabled, true);
+  assert.equal(probe.everyMs, 60000);
+  assert.equal(probe.probesPerDay, 1440);                          // round(86400000 / 60000)
+  assert.equal(probe.promptTokensEstimate, 7);                     // 最近一次成功探测的真实值
+  assert.equal(probe.probeMaxTokens, 24);
+  assert.equal(probe.tokensPerDayEstimate, 1440 * (7 + 24));       // 44640
+  // 字段名必须自带「这是估算」的标记，不能长得像账单
+  assert.equal('tokensPerDay' in probe, false);
+  assert.equal('tokensPerDayEstimate' in probe, true);
+
+  const view = (await (await s.get('/config')).json()).config;
+  assert.deepEqual(view.probe, probe, '/config 的 probe 块必须与 /snapshot 一致');
+});
+
+test('probe 块：没有成功样本时 prompt 侧用 24 占位（估算口径写在字段名里）', async (t) => {
+  const up = await startUpstream(t, { fail: true });     // 探测全失败 → 没有 promptTokens 可用
+  const s = await setup(t, { baseUrl: up.baseUrl, extra: { probeEveryMs: 120000, probeMaxTokens: 24 } });
+  s.col.start();
+  assert.ok(await waitFor(() => s.col.snapshotPayload().client.probeCount >= 1), '失败样本也没记上');
+
+  const probe = s.col.snapshotPayload().probe;
+  assert.equal(probe.enabled, true);
+  assert.equal(probe.probesPerDay, 720);                    // round(86400000 / 120000)
+  assert.equal(probe.promptTokensEstimate, 24);             // 占位值
+  assert.equal(probe.tokensPerDayEstimate, 720 * (24 + 24)); // 34560
+});
+
+test('POST /config：probe 变化热生效（false 立刻停、true 立刻起），只改 model 不动总开关', async (t) => {
+  const up = await startUpstream(t);
+  const s = await setup(t, { baseUrl: up.baseUrl, extra: { probeEveryMs: 5000 } });
+  s.col.start();
+  assert.ok(await waitFor(() => s.col.snapshotPayload().client.probeCount >= 1), '首次探测没回来');
+
+  const off = await s.post('/config', { probe: false });
+  const offBody = await off.json();
+  assert.equal(off.status, 200);
+  assert.equal(offBody.config.probe.enabled, false);
+  assert.equal(offBody.restarted, false, '总开关关掉时没有"重启探测"可言');
+  assert.equal(s.readFile().probe, false);
+  const stopped = s.fetchCalls();
+  await sleep(200);
+  assert.equal(s.fetchCalls(), stopped, '关掉总开关后不得再探测');
+
+  // 只改 model：总开关必须保持关闭（不能被热重启顺手打开）
+  const keep = await (await s.post('/config', { model: 'test-model-2' })).json();
+  assert.equal(keep.config.probe.enabled, false);
+  assert.equal(s.readFile().probe, false);
+  await sleep(150);
+  assert.equal(s.fetchCalls(), stopped, '只改 model 不得恢复探测');
+
+  const on = await s.post('/config', { probe: true });
+  const onBody = await on.json();
+  assert.equal(onBody.config.probe.enabled, true);
+  assert.equal(onBody.restarted, true);
+  assert.equal(s.readFile().probe, true);
+  assert.ok(await waitFor(() => s.col.snapshotPayload().client.probeCount >= 2), '打开总开关后没有恢复探测');
+});
+

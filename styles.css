@@ -434,6 +434,16 @@ button.ftr-icon.is-flash { color: var(--green); }                  /* 操作成�
   accent-color: var(--green);
   -webkit-app-region: no-drag;
 }
+/* 主动探测开关下面那行成本提示：小而实，把"每天要花多少"说清楚 */
+.set-hint {
+  margin: 0;
+  padding-left: calc(var(--u) * 0.4);
+  font-size: calc(var(--u) * 2.6);
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--text-dim);
+  word-break: break-word;
+}
 .set-actions {
   display: flex;
   gap: calc(var(--u) * 1.8);

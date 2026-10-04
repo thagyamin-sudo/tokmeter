@@ -10,7 +10,8 @@ export const DEFAULT_CONFIG = {
   baseUrl: 'https://api.openai.com/v1',
   apiKey: '',
   model: 'gpt-4o-mini',
-  probeEveryMs: 15000,      // 主动探测间隔（越小越费钱，最小 5 秒）
+  probe: true,              // 主动探测总开关：false = 只被动统计，零额外调用
+  probeEveryMs: 60000,      // 主动探测间隔（越小越费钱，最小 5 秒）
   probeMaxTokens: 24,
   probePrompt: '用一句话说明什么是缓存。',
   proxy: false,             // 是否开启 OpenAI 兼容转发（被动统计真实流量）
@@ -19,7 +20,10 @@ export const DEFAULT_CONFIG = {
 };
 
 /** 面板可以把这些字段写回来（port 不开放：改端口必须重启进程才生效）。 */
-export const PATCHABLE_FIELDS = ['baseUrl', 'model', 'probeEveryMs', 'probeMaxTokens', 'probePrompt', 'proxy'];
+export const PATCHABLE_FIELDS = ['baseUrl', 'model', 'probe', 'probeEveryMs', 'probeMaxTokens', 'probePrompt', 'proxy'];
+
+/** 没有成功样本时占位的 prompt token 数（只用于「每天大约消耗多少 token」的估算）。 */
+export const PROBE_PROMPT_TOKENS_FALLBACK = 24;
 
 /** 归一化并校验；出错抛带可读信息的 Error，调用方直接打印即可。 */
 export function normalizeConfig(raw) {
@@ -29,6 +33,8 @@ export function normalizeConfig(raw) {
     baseUrl: String(merged.baseUrl || '').replace(/\/+$/, ''),
     apiKey: typeof merged.apiKey === 'string' ? merged.apiKey : '',
     model: String(merged.model || ''),
+    // 只有真正的布尔 false 才是关；字符串 "false" / 0 / 缺省一律按默认 true
+    probe: typeof merged.probe === 'boolean' ? merged.probe : DEFAULT_CONFIG.probe,
     probeEveryMs: Number(merged.probeEveryMs),
     probeMaxTokens: Number(merged.probeMaxTokens),
     probePrompt: String(merged.probePrompt || DEFAULT_CONFIG.probePrompt),
@@ -120,13 +126,44 @@ export function patchConfig(current, patch) {
   return normalizeConfig(next);
 }
 
-/** 面板可见的配置视图：apiKey 已脱敏，可以直接回传给浏览器。 */
-export function publicConfig(cfg, { configPath = null } = {}) {
+/**
+ * 探测预算：把「多久探一次」翻译成面板要显示的「每天多少次、约多少 token」。
+ *
+ * enabled 由调用方给出（运行时的真实状态），不只看 cfg.probe：
+ * 页脚 ⏻ 与桌面壳「隐藏到托盘」都是临时暂停，此时 probesPerDay 必须是 0。
+ * 字段名带 Estimate —— prompt 侧取「最近一次成功探测的 promptTokens」，没有样本时按
+ * PROBE_PROMPT_TOKENS_FALLBACK（24）占位，这是估算口径，不是账单。
+ */
+export function probeBudget(cfg, { promptTokens = 0, enabled = null } = {}) {
+  const c = cfg && typeof cfg === 'object' ? cfg : DEFAULT_CONFIG;
+  const on = enabled === null ? c.probe !== false : enabled === true;
+  const num = (v, fallback) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : fallback);
+  const everyMs = num(c.probeEveryMs, DEFAULT_CONFIG.probeEveryMs);
+  const probeMaxTokens = num(c.probeMaxTokens, DEFAULT_CONFIG.probeMaxTokens);
+  const promptTokensEstimate = num(promptTokens, PROBE_PROMPT_TOKENS_FALLBACK);
+  const probesPerDay = on ? Math.round(86400000 / everyMs) : 0;
+  return {
+    enabled: on,
+    everyMs,
+    probesPerDay,
+    probeMaxTokens,
+    promptTokensEstimate,
+    tokensPerDayEstimate: probesPerDay * (promptTokensEstimate + probeMaxTokens),
+  };
+}
+
+/**
+ * 面板可见的配置视图：apiKey 已脱敏，可以直接回传给浏览器。
+ * probe 块允许调用方传入**运行时**状态（页脚 ⏻ / 托盘隐藏都会临时暂停探测）；
+ * 不传时按配置文件里的总开关算。
+ */
+export function publicConfig(cfg, { configPath = null, probe = null } = {}) {
   return {
     baseUrl: cfg.baseUrl,
     apiKey: maskApiKey(cfg.apiKey),
     apiKeySet: typeof cfg.apiKey === 'string' && cfg.apiKey !== '',
     model: cfg.model,
+    probe: probe && typeof probe === 'object' ? probe : probeBudget(cfg),
     probeEveryMs: cfg.probeEveryMs,
     probeMaxTokens: cfg.probeMaxTokens,
     probePrompt: cfg.probePrompt,

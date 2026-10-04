@@ -30,6 +30,11 @@ const panel = document.getElementById('panel');
 let activeSource = null;
 let paused = false;
 let settings = null;
+/** 采集器根地址：设置浮层与页脚 ⏻（POST /probe）都连它，只推导一次，保证两处一致。 */
+const collectorBase = params.get('config') || configBaseFromEndpoint(params.get('endpoint'));
+/** 页脚电源按钮的两种标签：这一个按钮现在管的是"探测"，不是"面板刷新"。 */
+const POWER_PAUSE_LABEL = '暂停探测';
+const POWER_RESUME_LABEL = '恢复探测';
 
 function flash(btn) {
   if (!btn) return;
@@ -56,6 +61,13 @@ async function copySummary(btn) {
   flash(btn);
 }
 
+/**
+ * 页脚 ⏻：暂停/恢复**两件事** —— 面板自己的刷新，以及采集器的主动探测。
+ *
+ * 只用面板停刷新是用户抱怨的那个 bug：藏在托盘里的采集器照样每 15 秒打一次上游、
+ * 走用户的真实计费。所以这里同时 POST /probe；采集器连不上时退回"只停面板刷新"，
+ * 在浮层与控制台各说明一句，绝不假装已经停了。
+ */
 function togglePause(btn) {
   paused = !paused;
   if (paused) {
@@ -63,8 +75,48 @@ function togglePause(btn) {
   } else {
     startSource();
   }
-  if (btn) btn.classList.toggle('is-off', paused);
+  if (btn) {
+    btn.classList.toggle('is-off', paused);
+    btn.title = paused ? POWER_RESUME_LABEL : POWER_PAUSE_LABEL;
+    btn.setAttribute('aria-label', btn.title);
+  }
   stats.paused = paused;
+  void syncCollectorProbe(paused);
+}
+
+/** POST /probe {enabled}：把暂停/恢复同步到采集器。失败只影响探测同步，不影响面板。 */
+async function syncCollectorProbe(shouldPause) {
+  const rec = stats.probeSync || (stats.probeSync = {});
+  rec.base = collectorBase;
+  rec.requested = shouldPause ? 'pause' : 'resume';
+  rec.ok = null;
+  rec.sent = null;
+  rec.error = null;
+  rec.probe = null;
+  try {
+    const res = await fetch(collectorBase + '/probe', {
+      method: 'POST',
+      cache: 'no-store',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ enabled: !shouldPause }),
+      signal: typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(3000) : undefined,
+    });
+    const out = await res.json().catch(() => null);
+    if (!res.ok) {
+      const raw = out ? (out.message || out.error) : null;
+      throw new Error(typeof raw === 'string' ? raw : raw && raw.message ? raw.message : 'HTTP ' + res.status);
+    }
+    rec.ok = true;
+    rec.sent = { enabled: !shouldPause };
+    rec.probe = out && out.probe ? out.probe : null;
+  } catch (err) {
+    rec.ok = false;
+    rec.error = err && err.message ? err.message : String(err);
+    const msg = '只暂停了面板刷新：没连上采集器（' + rec.error + '），探测没被暂停。' +
+      (shouldPause ? '彻底关掉请打开设置 → 关闭「启用主动探测」。' : '');
+    console.warn('[tokmeter] ' + msg);
+    if (settings && typeof settings.showNotice === 'function') settings.showNotice(msg);
+  }
 }
 
 function wireControls() {
@@ -116,7 +168,7 @@ renderShell(panel, view);
 /** 设置浮层：采集器根地址优先取 ?config=，否则从 snapshot 端点推（桌面壳会显式带上 ?config=）。 */
 settings = createSettings({
   root: panel,
-  baseUrl: params.get('config') || configBaseFromEndpoint(params.get('endpoint')),
+  baseUrl: collectorBase,
   onSaved: () => {
     if (activeSource && typeof activeSource.pollOnce === 'function') activeSource.pollOnce();
   },

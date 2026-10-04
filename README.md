@@ -9,7 +9,7 @@
 *左：参考设计稿 ｜ 右：Tokmeter 复刻成品（面板高宽比 1.4540 vs 参考 1.4518，误差 0.16%）*
 
 Tokmeter 是一个纯粹的**观测面板**：它不代理推理、不改写你的请求、不碰你的模型，只把「现在跑得怎么样」如实画出来。
-核心产物 `llm-monitor.html` 是一份 **79.4 KB 的单文件**（样式与脚本全部内联），双击即用、可离线、可随手转发。
+核心产物 `llm-monitor.html` 是一份 **108.2 KB 的单文件**（样式与脚本全部内联），双击即用、可离线、可随手转发。
 
 ---
 
@@ -21,12 +21,13 @@ Tokmeter 是一个纯粹的**观测面板**：它不代理推理、不改写你�
 - **客户端视图**：TTFT P50/P95、实测 tok/s P50/P95、探测成功率与可用率、token 用量与成本估算——只显示真实可测的客户端指标。
 - **绝不编造数据**：拿不到的字段一律显示 `--`，不会伪造 `0`（有专门测试钉住这条）。
 - **自动降级**：端点异常时状态转为 `stale` / `error` 并把数据区压暗，**曲线保留最后一帧、布局不塌陷**。
-- **页脚三键**：立即刷新 / 复制当前状态 / 暂停·恢复监测。
+- **页脚四键**：立即刷新 / 复制当前状态 / 暂停·恢复探测（⏻ 同时停掉采集器的主动探测）/ 设置。
+- **探测成本看得见**：设置页里一行字写清「每 N 秒 1 次 ≈ 每天多少次、约多少 token」，默认 60 秒一次；关掉总开关就只被动统计、**零额外调用**。
 - **可选灵动岛**：`?island=1` 唤出胶囊形态。
 - **PWA**：在 http(s) 下可「添加到主屏幕」。
 - **Windows 桌面版**：无边框透明悬浮窗 + 托盘控制 + 内置采集器（不用另开 node 进程）+ NSIS 安装包。
 - **零第三方运行时依赖**：面板是原生 JS，采集器只用 Node 内置模块。
-- **测试完备**：91 个单元测试 + 98 项端到端探针断言，全绿。
+- **测试完备**：124 个单元测试 + 179 项端到端探针断言，全绿。
 
 ---
 
@@ -34,7 +35,7 @@ Tokmeter 是一个纯粹的**观测面板**：它不代理推理、不改写你�
 
 ### 方式一：直接下载安装包（推荐给 Windows 用户）
 
-到 [Releases](https://github.com/thagyamin-sudo/tokmeter/releases/latest) 下载 **`Tokmeter-0.2.0-setup.exe`**（约 87.8 MB），双击安装。
+到 [Releases](https://github.com/thagyamin-sudo/tokmeter/releases/latest) 下载 **`Tokmeter-0.2.1-setup.exe`**（约 87.8 MB），双击安装。
 
 - 安装包是 NSIS 格式（`oneClick: false` + `perMachine: false`），**安装时可以自己选目录**，不需要管理员权限。
 - 自动创建桌面快捷方式与开始菜单项。
@@ -116,7 +117,8 @@ node collector.js D:/path/my-config.json # 也可以指定配置文件
 
 采集器做两件事：
 
-1. **主动探测**（默认）：每 `probeEveryMs` 发一次小流式请求（默认 15 秒、`max_tokens` 24，最小间隔 5 秒），量 TTFT 与真实 tok/s —— **不用改你任何应用**。
+1. **主动探测**（默认开，`"probe": true`）：每 `probeEveryMs` 发一次小流式请求（**默认 60 秒**、`max_tokens` 24，最小间隔 5 秒），量 TTFT 与真实 tok/s —— **不用改你任何应用**。
+   探测会**消耗你的 token、走你的真实计费**，所以默认已从 v0.2.0 的 15 秒放宽到 60 秒（5760 → 1440 次/天）；不想有任何额外调用就把 `probe` 设成 `false`（见「探测成本与开关」）。
 2. **被动统计**（`"proxy": true`）：把你应用的 `base_url` 指到 `http://127.0.0.1:8787/v1`，统计真实流量、token 用量与成本。
 
 ![客户端视图接真实网关](ref/live-client.png)
@@ -156,6 +158,7 @@ node collector.js D:/path/my-config.json # 也可以指定配置文件
 | 采集器状态（灰显） | `127.0.0.1:<port> · live/stale/error`，5 秒刷新 |
 | 显示/隐藏悬浮窗 | 左键单击托盘图标同效；文字随窗口可见性变化 |
 | 始终置顶（可勾选） | 写 `state.json`，立即生效 |
+| 隐藏时暂停探测（可勾选，**默认勾上**） | 悬浮窗收进托盘就停掉主动探测，重新显示自动恢复；写 `state.json` 的 `pauseProbeWhenHidden`。用户自己关掉的总开关不会被这里偷偷打开 |
 | 切换视图 → 服务端 / 客户端 | 服务端 = 面板内置模拟引擎；客户端 = 连本机采集器 |
 | 开机自启（可勾选） | `app.setLoginItemSettings`，写 HKCU 注册表 Run 项 |
 | 设置… | 显示悬浮窗并打开**面板内设置浮层**（改 baseUrl / key / model / 探测间隔 / 转发 / 单价，不用手动编辑 JSON） |
@@ -171,14 +174,15 @@ node collector.js D:/path/my-config.json # 也可以指定配置文件
 
 ![面板内设置页](ref/settings.png)
 
-*设置页：baseUrl / API Key（密码框里是脱敏值）/ model / 探测间隔 / 转发开关 / 两项单价，底部三个按钮*
+*设置页：baseUrl / API Key（密码框里是脱敏值）/ model / 探测间隔 / 启用主动探测（下面一行是每天的成本估算）/ 转发开关 / 两项单价，底部三个按钮*
 
 | 字段 | 说明 |
 | --- | --- |
 | 接口地址 `baseUrl` | OpenAI 兼容地址，必须以 `http://` 或 `https://` 开头 |
 | `API Key` | 密码框里显示的是**脱敏值**（如 `sk-***c3a3`）。**留空或保持原样 = 不改动**，只有重新输入才会覆盖 |
 | 模型 `model` | 不能为空 |
-| 探测间隔 | 毫秒，最小 `5000`（防烧钱下限） |
+| 探测间隔 | 毫秒，最小 `5000`（防烧钱下限）；默认 `60000` |
+| **启用主动探测** | 对应配置里的 `probe`（总开关）。**关掉 = 只被动统计经过本机的流量，零额外调用**；开关下面那行会实时算出「每 N 秒 1 次 ≈ 每天多少次、约多少 token（会消耗你的 token，走你的计费）」 |
 | 兼容转发 | 对应配置里的 `proxy` |
 | 输入 / 输出单价 | 对应 `pricing.inPerM` / `pricing.outPerM`（美元 / 百万 token） |
 
@@ -191,7 +195,8 @@ node collector.js D:/path/my-config.json # 也可以指定配置文件
 - 所有进行中状态与错误都**内联显示**，不会弹 alert 打断你。
 - 面板连不上采集器时，浮层里直接写：**「设置需要本机采集器（`node collector.js` 或桌面版）」**。
 - 桌面版：托盘菜单 **「设置…」** 会显示悬浮窗并打开这张浮层；旁边还有「打开配置文件所在目录」（在资源管理器里选中配置文件）。
-- 背后的 HTTP 接口（只监听 `127.0.0.1`，带 CORS）：`GET /config`（`apiKey` 只回末 4 位）、`POST /config`、`POST /config/test`。
+- 背后的 HTTP 接口（只监听 `127.0.0.1`，带 CORS）：`GET /config`（`apiKey` 只回末 4 位）、`POST /config`、`POST /config/test`、`POST /probe`。
+- `GET /config` 与 `GET /snapshot` 都带一个 `probe` 块：`{enabled, everyMs, probesPerDay, promptTokensEstimate, probeMaxTokens, tokensPerDayEstimate}`，面板的成本提示就是照它渲染的。
 
 ### 5. URL 参数表
 
@@ -223,8 +228,38 @@ node collector.js D:/path/my-config.json # 也可以指定配置文件
 | --- | --- | --- |
 | ⟳ 刷新 | 立即刷新 | 对当前数据源立刻拉一次数据（HTTP / vLLM / 采集器）；模拟引擎下只是给出视觉反馈。按下后有 900ms 高亮闪烁 |
 | ⧉ 复制 | 复制当前状态 | 把当前快照整理成一段纯文本摘要复制到剪贴板（以 `Tokmeter` 开头，含模型名、速率、请求、KV/GPU；客户端视图含 TTFT、探测次数、用量与成本，未知量显示 `--`）。`file://` 或权限不足时自动降级到 `execCommand('copy')` |
-| ⏻ 电源 | 暂停/恢复监测 | 暂停时停掉当前数据源（不再发任何请求），按钮转为关闭态；再按一次恢复轮询 |
-| ⚙ 设置 | 设置 | 打开面板内**设置浮层**（与点标题栏右侧的连接状态区同效）：改 baseUrl / API Key / model / 探测间隔 / 转发开关 / 两项单价，并可就地测试连接、保存后热重启探测 |
+| ⏻ 电源 | **暂停探测** | 一次点击停两件事：面板不再刷新**并且**调用采集器的 `POST /probe` 停掉主动探测（按钮转为变暗的关闭态，标题变成「恢复探测」）。再按一次两者一起恢复。**采集器连不上时会退回"只停面板刷新"**，并在设置浮层与控制台里明说"探测没被暂停" |
+| ⚙ 设置 | 设置 | 打开面板内**设置浮层**（与点标题栏右侧的连接状态区同效）：改 baseUrl / API Key / model / 探测间隔 / 主动探测开关 / 转发开关 / 两项单价，并可就地测试连接、保存后热重启探测 |
+
+### 7. 探测成本与开关
+
+主动探测是 Tokmeter 唯一会**替你花钱**的功能：它用你的 key、打你的上游、走你的计费。所以三件事都摆在明面上。
+
+**默认值**：`probeEveryMs = 60000`（60 秒一次）。`probeMaxTokens = 24`，探测串行执行（上一轮没回来就跳过）。
+60 秒一次 = **每天 1440 次调用**；v0.2.0 的 15 秒默认值是每天 5760 次（用户反馈"不用也一直在输入输出"，因此在 v0.2.1 放宽）。
+
+**估算口径**（`GET /config` / `GET /snapshot` 里的 `probe` 块，面板那行提示就是照它渲染的）：
+
+| 字段 | 含义 |
+| --- | --- |
+| `enabled` | **当前**是否真的在探测（总开关 + 页脚 ⏻ / 托盘暂停之后的运行时状态） |
+| `everyMs` | 探测间隔（毫秒） |
+| `probesPerDay` | `round(86400000 / everyMs)`，**探测关闭时为 0** |
+| `promptTokensEstimate` | 最近一次**成功**探测的真实 `prompt_tokens`；还没有成功样本时用 **24** 占位 |
+| `probeMaxTokens` | 每次探测的 `max_tokens` |
+| `tokensPerDayEstimate` | `probesPerDay × (promptTokensEstimate + probeMaxTokens)` —— 字段名带 Estimate，**这是估算，不是账单** |
+
+按默认值算：`1440 × (24 + 24) = 69120` → 面板显示「每 60 秒 1 次 ≈ 每天 1440 次调用、约 7 万 token（会消耗你的 token，走你的计费）」。
+
+**三种关法**（从临时到彻底）：
+
+| 想干什么 | 怎么做 | 生效范围 |
+| --- | --- | --- |
+| 临时停一会儿 | 面板页脚 **⏻**，或桌面版托盘菜单勾掉 | 运行时暂停，重启采集器后回到配置里的总开关 |
+| 收进托盘就别探 | 桌面版托盘菜单 **「隐藏时暂停探测」**（默认勾选，写进 `state.json` 的 `pauseProbeWhenHidden`） | 悬浮窗隐藏期间停，重新显示自动恢复 |
+| 彻底不要额外调用 | 设置浮层关掉 **「启用主动探测」**，或把配置里的 `"probe"` 改成 `false` | 写回 `collector.config.json`，**采集器连定时器都不挂**，一次探测请求都不发（只被动统计经过本机的流量） |
+
+> `probe: false` 不影响被动统计：`"proxy": true` 的转发、面板显示、成本计算全部照常，只是不再有"为了测速而发的请求"。
 
 ---
 
@@ -238,7 +273,8 @@ node collector.js D:/path/my-config.json # 也可以指定配置文件
 | `apiKey` | string | `''` | 你的 API Key。**只从本机这个文件读**，绝不出现在面板页面，也绝不出现在 `/snapshot` 响应里 |
 | `model` | string | `gpt-4o-mini` | 模型名，**不能为空** |
 | `port` | number | `8787` | 采集器监听端口（`1~65535`）。只监听 `127.0.0.1`，不对局域网暴露 |
-| `probeEveryMs` | number | `15000` | 主动探测间隔（毫秒）。**不得小于 5000**——这是防止探测烧钱的下限 |
+| `probe` | boolean | `true` | **主动探测总开关**。`false` = 只被动统计，定时器根本不挂、一次额外调用都不发。只有真正的布尔 `false` 才算关（字符串 `"false"` 会被当成默认 `true`） |
+| `probeEveryMs` | number | `60000` | 主动探测间隔（毫秒）。**不得小于 5000**——这是防止探测烧钱的下限 |
 | `probeMaxTokens` | number | `24` | 每次探测请求的 `max_tokens`，取值 `1~512` |
 | `probePrompt` | string | `用一句话说明什么是缓存。` | 探测用的提示词。建议用短提示，省 token |
 | `proxy` | boolean | `false` | 开启 OpenAI 兼容转发。开启后把应用的 `base_url` 指到 `http://127.0.0.1:8787/v1`，即可**被动统计真实流量** |
@@ -248,12 +284,16 @@ node collector.js D:/path/my-config.json # 也可以指定配置文件
 
 配置写错时采集器会在启动时打印可读的中文错误（例如 `baseUrl 必须以 http:// 或 https:// 开头`），不会带一堆堆栈。
 
-**采集器只暴露三个端点**：
+**采集器暴露的端点**（全部只监听 `127.0.0.1`）：
 
 | 端点 | 说明 |
 | --- | --- |
-| `GET /snapshot` | 面板要的客户端视图数据（**不含 apiKey**） |
+| `GET /snapshot` | 面板要的客户端视图数据（**不含 apiKey**）+ `probe` 估算块 |
 | `GET /health` | 存活探针：`{"ok": true, "status": "live"}` |
+| `GET /config` | 当前配置（`apiKey` 只回末 4 位）+ `probe` 估算块 |
+| `POST /config` | 改配置（部分字段）→ 写回文件 → 热生效：改 `probe` 会立刻启停定时器，不用重启进程 |
+| `POST /config/test` | 用提交的 baseUrl/key/model 发一次最小流式请求（不写配置、不计入统计） |
+| `POST /probe` | body `{"enabled": true/false}` → 立即启停探测（**运行时**，不写配置文件），返回 `{ok, probe}` |
 | `POST /v1/*` | 可选（仅 `proxy: true`）：OpenAI 兼容转发，key 由服务端注入，客户端拿不到 |
 
 ---
@@ -308,8 +348,12 @@ node collector.js D:/path/my-config.json # 也可以指定配置文件
 
 ### Q5：主动探测会不会很费钱？
 
-默认 15 秒一次、`max_tokens: 24`，一小时约 240 次短请求。按常见价格算是**每天几分钱**量级。
-三个保险：`probeEveryMs` 硬下限 5000 毫秒、`probeMaxTokens` 上限 512、探测**串行执行**（上一轮没回来就跳过，不会堆积）。
+默认 **60 秒一次**、`max_tokens: 24`，即每天 1440 次短请求；面板设置页会按你的配置直接算出「每天约多少 token」。
+按常见价格算仍是**每天几分钱**量级，但它确实**走你的真实计费**，所以：
+
+- 想彻底不发：设置浮层关掉「启用主动探测」，或配置里写 `"probe": false`（只被动统计，零额外调用）；
+- 想临时停：页脚 ⏻，或桌面版托盘「隐藏时暂停探测」；
+- 四个保险：`probeEveryMs` 硬下限 5000 毫秒、`probeMaxTokens` 上限 512、探测**串行执行**（上一轮没回来就跳过，不会堆积）、总开关 `probe: false` 时定时器根本不挂。
 
 ### Q6：桌面版窗口底部有一段透明空白？
 
@@ -325,8 +369,8 @@ node collector.js D:/path/my-config.json # 也可以指定配置文件
 - **面板页面不含 key**：`llm-monitor.html` 是纯静态文件，里面没有任何密钥；浏览器拿 `?view=client` 时只向本机采集器要数据。
 - **`/snapshot` 绝不返回 key**：采集器只监听 `127.0.0.1`，且响应体里不含 `apiKey`（有测试覆盖）。
 - **转发时 key 由服务端注入**：`proxy: true` 时，客户端发来的请求头会被丢弃，key 由采集器进程加上去，前端拿不到。
-- **最小暴露面**：采集器只暴露 `GET /snapshot`、`GET /health`、`GET /config`、`POST /config`、`POST /config/test`，以及（可选）`POST /v1/*`。
-- **写接口只信本机**：`/config` 与 `/config/test` 同样带 `Access-Control-Allow-Origin: *`，也就是说**本机上任何网页**都能改这份配置的 `baseUrl` / `model` / 转发开关 / 单价，并能让它发一次探测请求。所以：不要把 8787 端口转发或暴露到局域网/公网；多人共用的机器上，其他本机用户也能访问。
+- **最小暴露面**：采集器只暴露 `GET /snapshot`、`GET /health`、`GET /config`、`POST /config`、`POST /config/test`、`POST /probe`，以及（可选）`POST /v1/*`。
+- **写接口只信本机**：`/config`、`/config/test` 与 `/probe` 同样带 `Access-Control-Allow-Origin: *`，也就是说**本机上任何网页**都能改这份配置的 `baseUrl` / `model` / 转发开关 / 单价、启停主动探测，并能让它发一次探测请求。所以：不要把 8787 端口转发或暴露到局域网/公网；多人共用的机器上，其他本机用户也能访问。
 - **key 是单向的**：读接口只回末 4 位（`sk-***c3a3`），写接口只能"换 key"不能"读 key"；提交空串、`***` 或脱敏值一律视为不改动，日志里也从不打印 key。
 - **提交前自检**：`git status --short` 里不应出现 `collector.config.json`。
 
@@ -348,13 +392,13 @@ node tools/shot.js --out=ref/mine.png        # 截图，用于与 ref/ 参考图
 
 | 验证项 | 命令 | 结果 |
 | --- | --- | --- |
-| 单元测试 | `node --test` | **110 / 110 通过**，0 失败，约 2.8 秒 |
-| 端到端探针 | `node tools/probe.js` | **141 / 141 断言通过**（视口 390×844，面板 358.8×521.89） |
-| 单文件探针 | `node tools/probe.js --target=llm-monitor.html` | **135 / 135 断言通过**（视口 504×805，面板 420×610.56） |
-| 单文件构建 | `node build.js` | 输出 `llm-monitor.html` 102,443 字节（100.0 KB），内联模块 12 个；重复构建 **SHA256 逐字节一致** |
-| 安装包 | `Tokmeter-0.2.0-setup.exe` | 92,079,376 字节（87.8 MB），`VersionInfo.FileVersion = 0.2.0`，SHA256 `D7EE375A…48DC9BF` |
+| 单元测试 | `node --test` | **124 / 124 通过**，0 失败 |
+| 端到端探针 | `node tools/probe.js` | **179 / 179 断言通过**（视口 390×844，面板 358.8×521.89） |
+| 单文件探针 | `node tools/probe.js --target=llm-monitor.html` | **173 / 173 断言通过**（视口 504×805，面板 420×610.56） |
+| 单文件构建 | `node build.js` | 输出 `llm-monitor.html` 110,748 字节（108.2 KB），内联模块 12 个；重复构建 **SHA256 逐字节一致** |
+| 安装包 | `Tokmeter-0.2.1-setup.exe` | 见 GitHub Release 附件（`VersionInfo.FileVersion = 0.2.1`） |
 
-单文件产物 SHA256：`30EAF39A310C5368F1B9EF5D9F88B1450F4D80929A4D21727109AAA67EEFEEAC`
+单文件产物 SHA256：`FEC265568805DDFC3B0A983FE8A419DBCFD380B9175DC6A9C6D96E649F891976`
 
 ### 与参考设计稿的一致性
 

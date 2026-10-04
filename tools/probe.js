@@ -18,6 +18,8 @@ import { spawn } from 'node:child_process';
 import { extname, join, normalize, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+// 这两个常量是面板里的成本提示文案（逐字断言，别在探针里另抄一份）
+import { PROBE_HINT_FALLBACK, PROBE_OFF_HINT } from '../src/settings.js';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const EDGE = process.env.EDGE_PATH || 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
@@ -114,6 +116,105 @@ function dumpDom(url) {
   });
 }
 
+/**
+ * 假采集器：只回面板要的三条接口（/config、/snapshot、/probe），并记录每一次 POST /probe。
+ *
+ * 为什么不用真的 collector：设置浮层读的是"本机恰好开着的那台采集器"，
+ * 它的 probe 状态（开/关、间隔、prompt 估算）在开发机上不受控，断言会飘。
+ * 这里给一份固定的 probe 块，成本提示文案才能逐字断言。
+ */
+function startStubCollector({ enabled = true, everyMs = 60000, probeMaxTokens = 24, promptTokensEstimate = 24 } = {}) {
+  const posts = [];
+  const state = { enabled, everyMs, probeMaxTokens, promptTokensEstimate };
+  const probeBlock = () => {
+    const probesPerDay = state.enabled ? Math.round(86400000 / state.everyMs) : 0;
+    return {
+      enabled: state.enabled,
+      everyMs: state.everyMs,
+      probesPerDay,
+      probeMaxTokens: state.probeMaxTokens,
+      promptTokensEstimate: state.promptTokensEstimate,
+      tokensPerDayEstimate: probesPerDay * (state.promptTokensEstimate + state.probeMaxTokens),
+    };
+  };
+  const cors = {
+    'access-control-allow-origin': '*',
+    'access-control-allow-headers': 'content-type',
+    'access-control-allow-methods': 'GET,POST,OPTIONS',
+  };
+  const server = createServer((req, res) => {
+    const path = String(req.url || '').split('?')[0];
+    const send = (code, body) => {
+      res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', ...cors });
+      res.end(JSON.stringify(body));
+    };
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, cors);
+      return res.end();
+    }
+    if (path === '/config' && req.method === 'GET') {
+      return send(200, {
+        ok: true,
+        config: {
+          baseUrl: 'https://stub.example/v1',
+          apiKey: 'sk-***stub',
+          apiKeySet: true,
+          model: 'stub-model',
+          probeEveryMs: state.everyMs,
+          probeMaxTokens: state.probeMaxTokens,
+          probePrompt: 'stub',
+          proxy: false,
+          pricing: { inPerM: 0, outPerM: 0 },
+          port: 0,
+          timeoutMs: 30000,
+          configPath: null,
+          writable: false,
+          probe: probeBlock(),
+        },
+      });
+    }
+    if (path === '/probe' && req.method === 'POST') {
+      const chunks = [];
+      req.on('data', (c) => chunks.push(c));
+      req.on('end', () => {
+        let body = {};
+        try {
+          body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+        } catch {
+          body = { unparsable: true };
+        }
+        posts.push(body);
+        state.enabled = body.enabled === true;
+        send(200, { ok: true, probe: probeBlock() });
+      });
+      return;
+    }
+    if (path === '/snapshot') {
+      return send(200, {
+        view: 'client', status: 'live', clock: '00:00:00', updatedAt: Date.now(),
+        model: { name: 'stub-model', engine: 'OpenAI 兼容', nodes: 'API', link: 'up' },
+        output: { tokPerSec: 0, history: [] },
+        input: { tokPerSec: 0, prefillAvgMs: 0 },
+        requests: { active: 0, queued: 0, capacity: 1 },
+        client: {
+          ttftP50: 0, ttftP95: 0, ttftLast: 0, rateP50: 0, rateP95: 0, probeCount: 0, failCount: 0,
+          successRate: null, available: false, tokensIn: 0, tokensOut: 0, cost: 0, lastError: null,
+        },
+      });
+    }
+    return send(404, { ok: false, error: { message: 'not found' } });
+  });
+  return new Promise((ok) => {
+    server.listen(0, '127.0.0.1', () => ok({
+      server,
+      port: server.address().port,
+      url: 'http://127.0.0.1:' + server.address().port,
+      posts,
+      probeBlock,
+    }));
+  });
+}
+
 const checks = [];
 const add = (label, ok, detail) => checks.push({ label, ok, detail });
 const eq = (label, actual, expected) =>
@@ -142,6 +243,11 @@ function checkShell(p) {
   eq('默认视图：server（与参考截图一致）', p.view, 'server');
   // 第 4 个齿轮不能破坏默认视图：浮层默认必须收起，按钮几何逐个量（见 checkFooterGeometry）
   eq('设置：默认视图不出现浮层', !!(p.settings && p.settings.open), false);
+  // ⏻ 现在的语义是"暂停主动探测"：默认标题必须写明，别只写"暂停监测"
+  const powerLabel = (p.controls && p.controls.powerLabel) || {};
+  eq('页脚 ⏻：默认标题是「暂停探测」', powerLabel.title, '暂停探测');
+  eq('页脚 ⏻：默认 aria-label 是「暂停探测」', powerLabel.aria, '暂停探测');
+  eq('页脚 ⏻：默认不是变暗状态', powerLabel.isOff, false);
   checkFooterGeometry(p);
 }
 
@@ -292,7 +398,58 @@ function checkSettings(p, live) {
   eq('设置：测试连接按钮', s.buttons.test, true);
   eq('设置：保存按钮', s.buttons.save, true);
   eq('设置：关闭按钮', s.buttons.close, true);
+  // 主动探测开关（v0.2.1）：开关本体 + 它下面那行成本提示必须都在
+  eq('设置：主动探测开关字段', s.fields.probe, true);
+  eq('设置：主动探测开关是勾选框', s.probe && s.probe.present, true);
+  eq('设置：开关文案是「启用主动探测」', String((s.probe || {}).label || '').includes('启用主动探测'), true);
+  eq('设置：成本提示行存在且可见', !!(s.probe && s.probe.hintPresent) && s.probe.hintHidden === false, true);
   if (live) near('设置：打开浮层不改变面板高度', p.panel.h, live.panel.h, 0.01);
+}
+
+/**
+ * 成本提示：开着要给出"每天多少次、约多少 token"，关着要明说不再产生额外调用。
+ * 用假采集器喂固定的 probe 块，文案才能逐字断言。
+ */
+function checkProbeHint(p, { enabled, offHint = false }) {
+  const s = p.settings || {};
+  const probe = s.probe || {};
+  eq('设置：探测开关与采集器状态一致', probe.checked, enabled);
+  eq('设置：成本提示行可见', probe.hintPresent === true && probe.hintHidden === false, true);
+  if (offHint) {
+    eq('设置：关闭探测时给出「已关闭主动探测…」', probe.hint, PROBE_OFF_HINT);
+  } else {
+    eq('设置：成本提示按 60 秒/24+24 token 算出「每天 1440 次、约 7 万 token」', probe.hint,
+      '每 60 秒 1 次 ≈ 每天 1440 次调用、约 7 万 token（会消耗你的 token，走你的计费）');
+    add('设置：成本提示含「每天」', String(probe.hint || '').includes('每天'), 'hint=' + JSON.stringify(probe.hint));
+    add('设置：成本提示含「会消耗你的 token」', String(probe.hint || '').includes('会消耗你的 token'), 'hint=' + JSON.stringify(probe.hint));
+  }
+}
+
+/** 页脚 ⏻：必须同时暂停采集器的探测（POST /probe），而不是只停面板刷新。 */
+function checkPowerProbe(p, stubPosts, { clicks = 1 } = {}) {
+  const c = p.controls || {};
+  const label = c.powerLabel || {};
+  const sync = c.probeSync || {};
+  const paused = clicks % 2 === 1;     // 奇数次点击 = 停着，偶数次 = 恢复
+  eq('⏻：面板刷新进入暂停', c.press.power.paused, paused);
+  eq('⏻：保持变暗状态', c.press.power.isOff, paused);
+  eq('⏻：标签明确写「' + (paused ? '恢复探测' : '暂停探测') + '」', label.title, paused ? '恢复探测' : '暂停探测');
+  eq('⏻：aria-label 与标题一致', label.aria, label.title);
+  eq('⏻：真的调到了采集器 /probe', sync.ok, true);
+  eq('⏻：最后一次 POST 的 body', JSON.stringify(sync.sent), JSON.stringify({ enabled: !paused }));
+  eq('⏻：采集器收到的 POST /probe 次数', stubPosts.length, clicks);
+  eq('⏻：第 1 次点击发的是 {enabled:false}', JSON.stringify(stubPosts[0] || null), JSON.stringify({ enabled: false }));
+  if (clicks > 1) eq('⏻：恢复时发的是 {enabled:true}', JSON.stringify(stubPosts[1] || null), JSON.stringify({ enabled: true }));
+  eq('⏻：返回的 probe 块 enabled', sync.probe && sync.probe.enabled, !paused);
+}
+
+/** 没有采集器时：⏻ 只能停面板刷新，必须说明"探测没被暂停"，不能假装成功。 */
+function checkPowerProbeOffline(p) {
+  const sync = (p.controls || {}).probeSync || {};
+  eq('⏻（无采集器）：面板刷新仍然进入暂停', p.controls.press.power.paused, true);
+  eq('⏻（无采集器）：探测同步失败被如实记下', sync.ok, false);
+  eq('⏻（无采集器）：失败原因可读', typeof sync.error === 'string' && sync.error.length > 0, true);
+  eq('⏻（无采集器）：提示里说明只停了面板刷新', String(p.settings.notice || '').includes('只暂停了面板刷新'), true);
 }
 
 /** 采集器不在时：浮层照常打开，但必须给出一句可操作的提示，而不是静默失败。 */
@@ -465,6 +622,62 @@ async function main() {
     add('关闭浮层探针', false, '关闭运行没有拿到探针输出');
   } else {
     checkSettingsClosed(JSON.parse(m8[1]), clientProbe);
+  }
+
+  // 第九/十/十一/十二次运行：主动探测开关与成本提示、页脚 ⏻ 真的去停采集器的探测。
+  // 用假采集器（固定的 probe 块 + 记录 POST /probe），文案与请求体才能逐字断言，不受开发机状态影响。
+  const stubOn = await startStubCollector({ enabled: true });
+  const stubOff = await startStubCollector({ enabled: false });
+  try {
+    const dom9 = await dumpDom(makeUrl('view=client&press=settings,power&config=' + stubOn.url));
+    const m9 = dom9.match(/PROBE_JSON:(\{[\s\S]*?\})<\/pre>/);
+    if (!m9) {
+      add('探测开关（开）探针', false, '第九次运行没有拿到探针输出');
+    } else {
+      const p9 = JSON.parse(m9[1]);
+      checkProbeHint(p9, { enabled: true });
+      checkPowerProbe(p9, stubOn.posts, { clicks: 1 });
+    }
+
+    const dom10 = await dumpDom(makeUrl('view=client&press=settings&config=' + stubOff.url));
+    const m10 = dom10.match(/PROBE_JSON:(\{[\s\S]*?\})<\/pre>/);
+    if (!m10) {
+      add('探测开关（关）探针', false, '第十次运行没有拿到探针输出');
+    } else {
+      checkProbeHint(JSON.parse(m10[1]), { enabled: false, offHint: true });
+    }
+
+    const stubResume = await startStubCollector({ enabled: true });
+    try {
+      const dom11 = await dumpDom(makeUrl('view=client&press=power,power&config=' + stubResume.url));
+      const m11 = dom11.match(/PROBE_JSON:(\{[\s\S]*?\})<\/pre>/);
+      if (!m11) {
+        add('⏻ 暂停+恢复探针', false, '第十一次运行没有拿到探针输出');
+      } else {
+        checkPowerProbe(JSON.parse(m11[1]), stubResume.posts, { clicks: 2 });
+      }
+    } finally {
+      stubResume.server.close();
+    }
+
+    // 采集器连不上：⏻ 只能停面板刷新，必须在浮层里说明"探测没被暂停"
+    const deadPort2 = await new Promise((ok) => {
+      const s = createServer();
+      s.listen(0, '127.0.0.1', () => {
+        const port = s.address().port;
+        s.close(() => ok(port));
+      });
+    });
+    const dom12 = await dumpDom(makeUrl('view=client&press=power&config=http://127.0.0.1:' + deadPort2));
+    const m12 = dom12.match(/PROBE_JSON:(\{[\s\S]*?\})<\/pre>/);
+    if (!m12) {
+      add('⏻（无采集器）探针', false, '第十二次运行没有拿到探针输出');
+    } else {
+      checkPowerProbeOffline(JSON.parse(m12[1]));
+    }
+  } finally {
+    stubOn.server.close();
+    stubOff.server.close();
   }
 
   const failed = checks.filter((c) => !c.ok);

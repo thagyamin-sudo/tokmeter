@@ -9,7 +9,7 @@
 *Left: reference design ｜ Right: the Tokmeter replica (panel aspect ratio 1.4540 vs reference 1.4518 — a 0.16% difference)*
 
 Tokmeter is a pure **observation panel**: it does not proxy inference, does not rewrite your requests, and does not touch your model.
-It simply draws what is happening right now, truthfully. The core artifact, `llm-monitor.html`, is a **single 79.4 KB file**
+It simply draws what is happening right now, truthfully. The core artifact, `llm-monitor.html`, is a **single 108.2 KB file**
 with all styles and scripts inlined — double-click it, and it runs offline. You can hand it to anyone.
 
 ---
@@ -22,12 +22,13 @@ with all styles and scripts inlined — double-click it, and it runs offline. Yo
 - **Client view**: TTFT P50/P95, measured tok/s P50/P95, probe success rate and availability, token usage and estimated cost — only client-side metrics that can genuinely be measured.
 - **Never fabricates data**: anything unavailable is rendered as `--`, never a fake `0` (a dedicated test pins this behaviour).
 - **Graceful degradation**: when an endpoint fails, the status turns `stale` / `error` and the data area dims, while the **chart keeps its last frame and the layout never collapses**.
-- **Three footer buttons**: refresh now / copy current status / pause·resume monitoring.
+- **Four footer buttons**: refresh now / copy current status / pause·resume **probing** (⏻ also stops the collector's active probes) / settings.
+- **Probing cost, in plain sight**: the settings page shows one line — "once every N seconds ≈ X calls a day, about Y tokens" — with a 60-second default; switching the master switch off leaves passive accounting only, with **zero extra calls**.
 - **Optional dynamic island**: `?island=1` switches to the capsule form factor.
 - **PWA**: installable via "Add to Home Screen" over http(s).
 - **Windows desktop build**: frameless transparent floating window + tray control + embedded collector (no separate node process) + NSIS installer.
 - **Zero third-party runtime dependencies**: the panel is plain JavaScript; the collector uses only Node built-ins.
-- **Well tested**: 91 unit tests + 98 end-to-end probe assertions, all green.
+- **Well tested**: 124 unit tests + 179 end-to-end probe assertions, all green.
 
 ---
 
@@ -35,7 +36,7 @@ with all styles and scripts inlined — double-click it, and it runs offline. Yo
 
 ### Option 1 — Download the installer (recommended for Windows)
 
-Grab **`Tokmeter-0.2.0-setup.exe`** (about 87.8 MB) from [Releases](https://github.com/thagyamin-sudo/tokmeter/releases/latest) and double-click it.
+Grab **`Tokmeter-0.2.1-setup.exe`** (about 87.8 MB) from [Releases](https://github.com/thagyamin-sudo/tokmeter/releases/latest) and double-click it.
 
 - NSIS installer (`oneClick: false` + `perMachine: false`) — **you choose the install directory**, and no admin rights are required.
 - Creates a desktop shortcut and a Start Menu entry automatically.
@@ -118,7 +119,8 @@ Then open the panel: `llm-monitor.html?view=client` (or `index.html?view=client`
 
 The collector does two things:
 
-1. **Active probing** (default): sends one small streaming request every `probeEveryMs` (15 s by default, `max_tokens` 24, 5 s minimum interval) to measure TTFT and real tok/s — **without touching any of your applications**.
+1. **Active probing** (on by default, `"probe": true`): sends one small streaming request every `probeEveryMs` (**60 s by default**, `max_tokens` 24, 5 s minimum interval) to measure TTFT and real tok/s — **without touching any of your applications**.
+   Probing **consumes your tokens and is billed to you**, so v0.2.1 relaxed the default from 15 s to 60 s (5760 → 1440 calls a day). Set `probe` to `false` if you want no extra calls at all (see "Probing cost and switches").
 2. **Passive accounting** (`"proxy": true`): point your application's `base_url` at `http://127.0.0.1:8787/v1` to measure real traffic, token usage and cost.
 
 ![Client view connected to a real gateway](ref/live-client.png)
@@ -159,6 +161,7 @@ After installing and launching Tokmeter you get a **frameless, transparent, roun
 | Collector status (greyed out) | `127.0.0.1:<port> · live/stale/error`, refreshed every 5 s |
 | Show/hide floating window | Same as left-clicking the tray icon; the label follows window visibility |
 | Always on top (checkable) | Writes `state.json`, takes effect immediately |
+| Pause probing while hidden (checkable, **on by default**) | Hiding the floating window to the tray stops active probing; showing it resumes automatically. Stored as `pauseProbeWhenHidden` in `state.json`. A master switch you turned off yourself is never secretly re-enabled here |
 | Switch view → server / client | Server = the panel's built-in mock engine; client = connects to the local collector |
 | Launch at login (checkable) | `app.setLoginItemSettings`, writes the HKCU Run key |
 | Settings… | Shows the floating window and opens the **in-panel settings overlay** (baseUrl / key / model / probe interval / proxy / prices — no hand-editing JSON) |
@@ -175,14 +178,15 @@ No file editing and no restart: click the **fourth footer button (the gear)**, o
 
 ![Settings page inside the panel](ref/settings.png)
 
-*Settings: baseUrl / API Key (the password box holds the masked value) / model / probe interval / proxy switch / two prices, with three buttons at the bottom*
+*Settings: baseUrl / API Key (the password box holds the masked value) / model / probe interval / Enable active probing (with the per-day cost estimate right below it) / proxy switch / two prices, with three buttons at the bottom*
 
 | Field | Notes |
 | --- | --- |
 | `baseUrl` | OpenAI-compatible endpoint; must start with `http://` or `https://` |
 | `API Key` | The password box shows the **masked** value (e.g. `sk-***c3a3`). **Leave it untouched (or empty) to keep the current key**; only a newly typed key overwrites it |
 | `model` | Must not be empty |
-| Probe interval | Milliseconds, minimum `5000` (the anti-burn-in floor) |
+| Probe interval | Milliseconds, minimum `5000` (the anti-burn-in floor); default `60000` |
+| **Enable active probing** | Maps to `probe` (the master switch). **Off = passive accounting only, zero extra calls.** The line right below the switch recomputes live: "once every N s ≈ X calls a day, about Y tokens (consumes your tokens, billed to you)" |
 | Compatible proxy | Maps to `proxy` |
 | Input / output price | Maps to `pricing.inPerM` / `pricing.outPerM` (USD per million tokens) |
 
@@ -195,7 +199,8 @@ No file editing and no restart: click the **fourth footer button (the gear)**, o
 - Every in-progress state and error is shown **inline**; there are no alert boxes.
 - When the panel cannot reach a collector, the overlay says exactly: **"设置需要本机采集器（`node collector.js` 或桌面版）"** (settings need the local collector).
 - Desktop build: the tray item **"Settings…"** shows the floating window and opens this overlay; the neighbouring **"Open config folder"** reveals the config file in Explorer.
-- Underlying HTTP endpoints (bound to `127.0.0.1` only, CORS enabled): `GET /config` (`apiKey` returns only its last 4 characters), `POST /config`, `POST /config/test`.
+- Underlying HTTP endpoints (bound to `127.0.0.1` only, CORS enabled): `GET /config` (`apiKey` returns only its last 4 characters), `POST /config`, `POST /config/test`, `POST /probe`.
+- Both `GET /config` and `GET /snapshot` carry a `probe` block: `{enabled, everyMs, probesPerDay, promptTokensEstimate, probeMaxTokens, tokensPerDayEstimate}` — the panel's cost line is rendered from it.
 
 ### 5. URL parameter reference
 
@@ -227,8 +232,38 @@ Four icon buttons sit at the bottom of the panel, left to right:
 | --- | --- | --- |
 | ⟳ Refresh | Refresh now | Immediately pulls one sample from the active data source (HTTP / vLLM / collector). Under the mock engine it only gives visual feedback. Flashes for 900 ms when pressed |
 | ⧉ Copy | Copy current status | Formats the current snapshot as plain text and copies it to the clipboard (starts with `Tokmeter`; includes model, rates, requests, KV/GPU — and for the client view TTFT, probe counts, usage and cost, with `--` for unknown values). Falls back to `execCommand('copy')` on `file://` or when permission is denied |
-| ⏻ Power | Pause/resume monitoring | While paused it stops the active data source entirely (no further requests are sent) and the button switches to its off state. Press again to resume polling |
-| ⚙ Settings | Settings | Opens the in-panel **settings overlay** (same as clicking the connection-status area in the header): baseUrl / API Key / model / probe interval / proxy / the two prices, with an in-place connection test and a hot restart of probing after saving |
+| ⏻ Power | **Pause probing** | One click stops two things: the panel stops refreshing **and** the collector's active probing is stopped via `POST /probe` (the button dims and its title becomes "Resume probing"). Press again to resume both. **If the collector is unreachable it falls back to pausing the panel only**, and says so in the settings overlay and the console |
+| ⚙ Settings | Settings | Opens the in-panel **settings overlay** (same as clicking the connection-status area in the header): baseUrl / API Key / model / probe interval / active-probing switch / proxy / the two prices, with an in-place connection test and a hot restart of probing after saving |
+
+### 7. Probing cost and switches
+
+Active probing is the only Tokmeter feature that **spends your money**: it uses your key, hits your upstream and is billed to you. So all three facts are stated up front.
+
+**Defaults**: `probeEveryMs = 60000` (once every 60 s). `probeMaxTokens = 24`, and probes run serially (if the previous one has not returned, the next is skipped).
+Once every 60 s = **1440 calls a day**; the 15-second default in v0.2.0 meant 5760 calls a day (users reported "it keeps sending and receiving even when I am not using it", so v0.2.1 relaxed it).
+
+**Estimation method** (the `probe` block in `GET /config` / `GET /snapshot`; the panel line is rendered from it):
+
+| Field | Meaning |
+| --- | --- |
+| `enabled` | Whether probing is **currently** running (the master switch after any footer ⏻ / tray pause) |
+| `everyMs` | Probe interval in milliseconds |
+| `probesPerDay` | `round(86400000 / everyMs)`, and **0 while probing is off** |
+| `promptTokensEstimate` | The real `prompt_tokens` of the last **successful** probe; **24** is used as a placeholder until there is one |
+| `probeMaxTokens` | `max_tokens` of each probe |
+| `tokensPerDayEstimate` | `probesPerDay × (promptTokensEstimate + probeMaxTokens)` — the name carries "Estimate": **this is an estimate, not a bill** |
+
+With the defaults: `1440 × (24 + 24) = 69120` → the panel shows "once every 60 s ≈ 1440 calls a day, about 70k tokens (consumes your tokens, billed to you)".
+
+**Three ways to turn it off** (from temporary to permanent):
+
+| Goal | How | Scope |
+| --- | --- | --- |
+| Pause for a while | The footer **⏻**, or untick the tray item | Runtime pause; restarting the collector returns to the configured master switch |
+| Do not probe while hidden | Desktop tray menu **"Pause probing while hidden"** (ticked by default, stored as `pauseProbeWhenHidden` in `state.json`) | Stopped while the floating window is hidden, resumed automatically when it reappears |
+| No extra calls at all | Switch **"Enable active probing"** off in the settings overlay, or set `"probe"` to `false` in the config | Written back to `collector.config.json`; the collector **does not even arm the timer**, so not a single probe request is sent (passive accounting only) |
+
+> `probe: false` does not affect passive accounting: `"proxy": true` forwarding, the panel and cost calculation all keep working — there are simply no more "requests sent just to measure speed".
 
 ---
 
@@ -242,7 +277,8 @@ Four icon buttons sit at the bottom of the panel, left to right:
 | `apiKey` | string | `''` | Your API key. **Read only from this local file**; it never reaches the panel page and never appears in a `/snapshot` response |
 | `model` | string | `gpt-4o-mini` | Model name, **must not be empty** |
 | `port` | number | `8787` | Collector port (`1`–`65535`). Bound to `127.0.0.1` only; never exposed to the LAN |
-| `probeEveryMs` | number | `15000` | Active-probe interval in milliseconds. **Must be at least 5000** — the lower bound that keeps probing cheap |
+| `probe` | boolean | `true` | **Master switch for active probing.** `false` = passive accounting only: the timer is never armed and not one extra call is made. Only a real boolean `false` counts (the string `"false"` falls back to the default `true`) |
+| `probeEveryMs` | number | `60000` | Active-probe interval in milliseconds. **Must be at least 5000** — the lower bound that keeps probing cheap |
 | `probeMaxTokens` | number | `24` | `max_tokens` for each probe request, `1`–`512` |
 | `probePrompt` | string | `用一句话说明什么是缓存。` | Prompt used for probing. Keep it short to save tokens |
 | `proxy` | boolean | `false` | Enable the OpenAI-compatible proxy. When on, point your app's `base_url` at `http://127.0.0.1:8787/v1` for **passive accounting of real traffic** |
@@ -252,12 +288,16 @@ Four icon buttons sit at the bottom of the panel, left to right:
 
 If the config is wrong, the collector prints a readable error at startup (for example `baseUrl must start with http:// or https://`) instead of a stack trace.
 
-**The collector exposes exactly three endpoints**:
+**Endpoints the collector exposes** (all bound to `127.0.0.1`):
 
 | Endpoint | Description |
 | --- | --- |
-| `GET /snapshot` | The client-view data the panel needs (**never contains apiKey**) |
+| `GET /snapshot` | The client-view data the panel needs (**never contains apiKey**) plus the `probe` estimate block |
 | `GET /health` | Liveness probe: `{"ok": true, "status": "live"}` |
+| `GET /config` | Current config (`apiKey` returns only its last 4 characters) plus the `probe` estimate block |
+| `POST /config` | Patch config → write the file → take effect hot: changing `probe` starts/stops the timer immediately, no restart |
+| `POST /config/test` | Sends one minimal streaming request with the submitted baseUrl/key/model (nothing written, nothing counted) |
+| `POST /probe` | Body `{"enabled": true/false}` → start/stop probing immediately (**runtime only**, the config file is untouched), returns `{ok, probe}` |
 | `POST /v1/*` | Optional (only with `proxy: true`): OpenAI-compatible forwarding; the key is injected server-side and never reaches the client |
 
 ---
@@ -312,8 +352,12 @@ A dedicated test pins this: **"missing metrics must be unknown (NaN → `--` in 
 
 ### Q5: Does active probing cost a lot?
 
-Once every 15 seconds with `max_tokens: 24` is roughly 240 short requests per hour — on the order of **a few cents per day** at typical prices.
-Three safeguards: a hard 5000 ms floor on `probeEveryMs`, a 512 cap on `probeMaxTokens`, and **serial execution** (if the previous probe has not returned, the next one is skipped, so nothing piles up).
+The default is **once every 60 seconds** with `max_tokens: 24` — 1440 short requests a day; the settings page computes "about how many tokens per day" from your own configuration.
+At typical prices that is still on the order of **a few cents per day**, but it really is **billed to you**, so:
+
+- To stop it entirely: switch "Enable active probing" off in the settings overlay, or set `"probe": false` in the config (passive accounting only, zero extra calls);
+- To pause it: the footer ⏻, or the desktop tray item "Pause probing while hidden";
+- Four safeguards: a hard 5000 ms floor on `probeEveryMs`, a 512 cap on `probeMaxTokens`, **serial execution** (a probe that has not returned is skipped, so nothing piles up), and a master switch (`probe: false`) that never even arms the timer.
 
 ### Q6: Why is there a transparent strip at the bottom of the desktop window?
 
@@ -329,8 +373,8 @@ That strip still belongs to the window and receives mouse events. Setting the wi
 - **The panel page contains no key**: `llm-monitor.html` is a pure static file with no secrets in it; with `?view=client` the browser only asks the local collector for data.
 - **`/snapshot` never returns the key**: the collector binds to `127.0.0.1` only and its response body contains no `apiKey` (covered by tests).
 - **The key is injected server-side when proxying**: with `proxy: true`, headers sent by the client are discarded and the key is added by the collector process, so the front end never sees it.
-- **Minimal surface**: the collector exposes `GET /snapshot`, `GET /health`, `GET /config`, `POST /config`, `POST /config/test` and (optionally) `POST /v1/*`.
-- **Write endpoints trust this machine only**: `/config` and `/config/test` also send `Access-Control-Allow-Origin: *`, so **any page on this machine** can change the `baseUrl` / `model` / proxy flag / pricing and can spend one probe request. Therefore: never forward or expose port 8787 to a LAN or the internet, and on a shared machine any local user can reach it too.
+- **Minimal surface**: the collector exposes `GET /snapshot`, `GET /health`, `GET /config`, `POST /config`, `POST /config/test`, `POST /probe` and (optionally) `POST /v1/*`.
+- **Write endpoints trust this machine only**: `/config`, `/config/test` and `/probe` also send `Access-Control-Allow-Origin: *`, so **any page on this machine** can change the `baseUrl` / `model` / proxy flag / pricing, start or stop active probing, and can spend one probe request. Therefore: never forward or expose port 8787 to a LAN or the internet, and on a shared machine any local user can reach it too.
 - **The key is one-way**: the read endpoint returns only the last 4 characters (`sk-***c3a3`); the write endpoint can replace the key but never read it, and an empty string, `***` or the masked value all mean "leave it unchanged". The key never appears in logs.
 - **Pre-commit check**: `collector.config.json` must never appear in `git status --short`.
 
@@ -352,13 +396,13 @@ The probe and screenshot scripts bring their own static server and headless Edge
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Unit tests | `node --test` | **110 / 110 passed**, 0 failed, about 2.8 s |
-| End-to-end probe | `node tools/probe.js` | **141 / 141 assertions passed** (viewport 390×844, panel 358.8×521.89) |
-| Single-file probe | `node tools/probe.js --target=llm-monitor.html` | **135 / 135 assertions passed** (viewport 504×805, panel 420×610.56) |
-| Single-file build | `node build.js` | `llm-monitor.html` at 102,443 bytes (100.0 KB), 12 inlined modules; repeat builds are **byte-identical (SHA256)** |
-| Installer | `Tokmeter-0.2.0-setup.exe` | 92,079,376 bytes (87.8 MB), `VersionInfo.FileVersion = 0.2.0`, SHA256 `D7EE375A…48DC9BF` |
+| Unit tests | `node --test` | **124 / 124 passed**, 0 failed |
+| End-to-end probe | `node tools/probe.js` | **179 / 179 assertions passed** (viewport 390×844, panel 358.8×521.89) |
+| Single-file probe | `node tools/probe.js --target=llm-monitor.html` | **173 / 173 assertions passed** (viewport 504×805, panel 420×610.56) |
+| Single-file build | `node build.js` | `llm-monitor.html` at 110,748 bytes (108.2 KB), 12 inlined modules; repeat builds are **byte-identical (SHA256)** |
+| Installer | `Tokmeter-0.2.1-setup.exe` | see the GitHub Release assets (`VersionInfo.FileVersion = 0.2.1`) |
 
-Single-file artifact SHA256: `30EAF39A310C5368F1B9EF5D9F88B1450F4D80929A4D21727109AAA67EEFEEAC`
+Single-file artifact SHA256: `FEC265568805DDFC3B0A983FE8A419DBCFD380B9175DC6A9C6D96E649F891976`
 
 ### Fidelity to the reference design
 

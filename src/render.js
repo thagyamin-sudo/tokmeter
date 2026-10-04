@@ -198,7 +198,8 @@ export function renderShell(root, view = 'server') {
     '  <div class="ftr-actions">',
     '    <button type="button" class="ftr-icon" id="btn-refresh" title="立即刷新" aria-label="立即刷新">' + ICONS.refresh + '</button>',
     '    <button type="button" class="ftr-icon" id="btn-copy" title="复制当前状态" aria-label="复制当前状态">' + ICONS.copy + '</button>',
-    '    <button type="button" class="ftr-icon" id="btn-power" title="暂停/恢复监测" aria-label="暂停/恢复监测">' + ICONS.power + '</button>',
+    // ⏻ 现在管的是"主动探测"：暂停面板刷新的同时也会 POST /probe 停掉采集器的探测
+    '    <button type="button" class="ftr-icon" id="btn-power" title="暂停探测" aria-label="暂停探测">' + ICONS.power + '</button>',
     '    <button type="button" class="ftr-icon" id="btn-settings" title="设置" aria-label="设置">' + ICONS.gear + '</button>',
     '  </div>',
     '</footer>',
@@ -474,6 +475,8 @@ export function collectProbe(root, s, stats) {
       const note = q('set-notice');
       const err = q('set-error');
       const key = q('set-apikey');
+      const probeSwitch = q('set-probe');
+      const probeHint = q('set-probe-hint');
       const flag = (id) => { const n = q(id); return n ? !!n.disabled : null; };
       return {
         present: !!box,
@@ -493,9 +496,23 @@ export function collectProbe(root, s, stats) {
           apiKeyPlaceholder: key ? key.placeholder : null,
           model: has('set-model'),
           probeEveryMs: has('set-interval'),
+          probe: has('set-probe'),
           proxy: has('set-proxy'),
           priceIn: has('set-in-perm'),
           priceOut: has('set-out-perm'),
+        },
+        // 主动探测开关 + 它下面那行成本提示（必须含"每天"/"会消耗你的 token"）
+        probe: {
+          present: has('set-probe'),
+          checked: probeSwitch ? !!probeSwitch.checked : null,
+          disabled: probeSwitch ? !!probeSwitch.disabled : null,
+          label: (() => {
+            const l = root.querySelector('label[for="set-probe"]');
+            return l ? l.textContent.trim() : null;
+          })(),
+          hintPresent: has('set-probe-hint'),
+          hint: probeHint ? probeHint.textContent.trim() : null,
+          hintHidden: probeHint ? !!probeHint.hidden : null,
         },
         buttons: { test: has('set-test'), save: has('set-save'), close: has('set-close') },
         disabled: { test: flag('set-test'), save: flag('set-save') },
@@ -529,6 +546,17 @@ export function collectProbe(root, s, stats) {
         };
       })(),
       press: { ...((stats && stats.press) || {}) },   // 按键结果放在 press 里，别覆盖上面的存在性标记
+      // ⏻ 的标签必须明确写"探测"，暂停后转成"恢复探测"；probeSync 记录 POST /probe 的真实结果
+      powerLabel: (() => {
+        const n = root.querySelector('#btn-power');
+        if (!n) return null;
+        return {
+          title: n.getAttribute('title'),
+          aria: n.getAttribute('aria-label'),
+          isOff: n.classList.contains('is-off'),
+        };
+      })(),
+      probeSync: { ...((stats && stats.probeSync) || {}) },
     },
     degrade: { staleLink: (stats && stats.staleLink) || null, staleDim: !!(stats && stats.staleDim) },
     island: (() => {

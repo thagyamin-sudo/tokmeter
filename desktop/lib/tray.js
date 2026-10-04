@@ -34,9 +34,10 @@ export function loadTrayIcon(iconPath) {
  * 菜单模板。ctx 由主进程提供：
  *   windowVisible() / toggleWindow() / alwaysOnTop() / setAlwaysOnTop(v) /
  *   view() / setView(v) / autoStart() / setAutoStart(v) / openConfig() / openSettings() /
- *   revealConfig() / quit() / statusText()
+ *   revealConfig() / quit() / statusText() /
+ *   pauseProbeWhenHidden() / setPauseProbeWhenHidden(v)
  */
-function buildTemplate(ctx) {
+export function buildTemplate(ctx) {
   const visible = ctx.windowVisible();
   return [
     { label: ctx.statusText(), enabled: false },
@@ -48,6 +49,13 @@ function buildTemplate(ctx) {
       type: 'checkbox',
       checked: !!ctx.alwaysOnTop(),
       click: (item) => ctx.setAlwaysOnTop(item.checked),
+    },
+    // 省 token 的开关：悬浮窗收进托盘就停掉主动探测（默认勾上）
+    {
+      label: '隐藏时暂停探测',
+      type: 'checkbox',
+      checked: ctx.pauseProbeWhenHidden() !== false,
+      click: (item) => ctx.setPauseProbeWhenHidden(item.checked),
     },
     {
       label: '切换视图',

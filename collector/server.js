@@ -1,22 +1,24 @@
 /**
  * 采集器 · HTTP 服务：对外只暴露面板需要的东西。
  *
- *   GET  /snapshot      → 客户端视图的数据（不含 apiKey）
+ *   GET  /snapshot      → 客户端视图的数据（不含 apiKey）+ probe 估算块
  *   GET  /health        → 存活探针
- *   GET  /config        → 当前配置（apiKey 已脱敏，只留末 4 位）
+ *   GET  /config        → 当前配置（apiKey 已脱敏，只留末 4 位）+ probe 估算块
  *   POST /config        → 改配置（部分字段）→ 写回文件 → 热重启探测，不用重启进程
  *   POST /config/test   → 用提交的 baseUrl/apiKey/model 试发一次最小流式请求（不写配置）
+ *   POST /probe         → {enabled} 立即启停主动探测（运行时暂停，不写配置文件）
  *   POST /v1/*          → 可选：OpenAI 兼容转发（被动统计真实流量），key 由本进程注入
  *
  * 主动探测：每 probeEveryMs 发一次小流式请求，量 TTFT / tok/s / 成功失败。
  * 串行执行（永不并发探测），避免把"排队等待"算成"模型慢"。
+ * 总开关 probe:false = 只被动统计，一次额外调用都不发（定时器根本不挂）。
  *
  * 安全约定：apiKey 只在本进程内使用；日志、响应、探针数据里都不允许出现它。
  */
 import { createServer } from 'node:http';
 import { createStats } from './stats.js';
 import { measureOpenAiStream } from './openai-probe.js';
-import { isApiKeyUnchanged, maskApiKey, patchConfig, publicConfig, writeConfig } from './config.js';
+import { isApiKeyUnchanged, maskApiKey, patchConfig, probeBudget, publicConfig, writeConfig } from './config.js';
 
 /** 请求体上限：配置就是几个字段，超过这个量级一定是发错了。 */
 const MAX_BODY_BYTES = 64 * 1024;
@@ -76,10 +78,49 @@ export function createCollector({ config, fetchImpl = fetch, now = () => Date.no
   const stats = createStats({ windowMs: 60000, pricing: config.pricing });
   let timer = null;
   let running = false;
+  let probePaused = false;      // 临时暂停（POST /probe、桌面壳隐藏到托盘），不写配置文件
   let inFlight = 0;
   let lastError = null;
   let status = 'connecting';
+  let lastPromptTokens = null;  // 最近一次成功探测的 promptTokens：面板「每天约多少 token」的估算口径
   const controller = new AbortController();
+
+  /** 当前是否真的在探测：进程 start() 过 + 总开关没关 + 没被临时暂停。 */
+  function probeEnabled() {
+    return running && config.probe !== false && !probePaused;
+  }
+
+  /**
+   * 让定时器与 probeEnabled() 对齐。没挂定时器 = 一次额外调用都不会发。
+   * restart：间隔/开关变了要换定时器；immediate：挂上后立刻探一次（换配置后马上有数）。
+   */
+  function syncTimer({ restart = false, immediate = true } = {}) {
+    const want = probeEnabled();
+    if (timer !== null && (restart || !want)) {
+      clearInterval(timer);
+      timer = null;
+    }
+    if (want && timer === null) {
+      timer = setInterval(() => probeOnce(), config.probeEveryMs);
+      if (immediate) void probeOnce();
+    }
+  }
+
+  /** 面板 / 桌面壳要的探测状态与成本估算（enabled 是运行时真实状态，不是配置里的字面值）。 */
+  function probeInfo() {
+    return probeBudget(config, { promptTokens: lastPromptTokens, enabled: probeEnabled() });
+  }
+
+  /** 立即启停探测：只动运行时，不写配置文件（页脚 ⏻、托盘「隐藏时暂停探测」都走这里）。 */
+  function setProbeEnabled(enabled) {
+    probePaused = enabled !== true;
+    if (!probePaused) {
+      status = 'connecting';   // 恢复后第一帧必须是"没有新样本"，不能沿用暂停前的 live
+      lastError = null;
+    }
+    syncTimer();
+    return probeInfo();
+  }
 
   /** 一次主动探测：只发一个小请求，量完就丢。 */
   async function probeOnce() {
@@ -104,6 +145,8 @@ export function createCollector({ config, fetchImpl = fetch, now = () => Date.no
       });
       if (!res.ok) throw new Error('上游 HTTP ' + res.status);
       const measured = await measureOpenAiStream(bodyLines(res), now, started);
+      // 记录最近一次**成功**探测的真实 prompt token 数，供「每天约多少 token」估算使用
+      if (Number.isFinite(measured.promptTokens) && measured.promptTokens > 0) lastPromptTokens = measured.promptTokens;
       stats.add({ t: started, ok: true, ...measured });
       status = 'live';
       lastError = null;
@@ -144,6 +187,8 @@ export function createCollector({ config, fetchImpl = fetch, now = () => Date.no
         cost: s.cost,
         lastError,
       },
+      // 探测状态与成本估算：面板据此显示「每天多少次、约多少 token」，并渲染开关文案
+      probe: probeInfo(),
     };
   }
 
@@ -182,9 +227,9 @@ export function createCollector({ config, fetchImpl = fetch, now = () => Date.no
     }
   }
 
-  /** 当前配置的面板视图（apiKey 已脱敏）。 */
+  /** 当前配置的面板视图（apiKey 已脱敏），probe 块带运行时的启停状态。 */
   function configView() {
-    return publicConfig(config, { configPath });
+    return publicConfig(config, { configPath, probe: probeInfo() });
   }
 
   /**
@@ -196,21 +241,21 @@ export function createCollector({ config, fetchImpl = fetch, now = () => Date.no
     if (!config.pricing || typeof config.pricing !== 'object') config.pricing = { inPerM: 0, outPerM: 0 };
     config.pricing.inPerM = next.pricing.inPerM;
     config.pricing.outPerM = next.pricing.outPerM;
-    for (const k of ['baseUrl', 'apiKey', 'model', 'probeEveryMs', 'probeMaxTokens', 'probePrompt', 'proxy', 'timeoutMs', 'port']) {
+    for (const k of ['baseUrl', 'apiKey', 'model', 'probe', 'probeEveryMs', 'probeMaxTokens', 'probePrompt', 'proxy', 'timeoutMs', 'port']) {
       config[k] = next[k];
     }
   }
 
-  /** 热重启探测：换间隔、立刻按新配置探一次（不用重启进程）。 */
-  function restartProbing() {
-    if (timer !== null) clearInterval(timer);
-    timer = null;
+  /**
+   * 热重启探测：换间隔、立刻按新配置探一次（不用重启进程）。
+   * resetProbe=true 只在**总开关真的变了**时传：那次是用户明确表态，要清掉临时暂停；
+   * 只改 model/baseUrl 时不碰临时暂停，免得把页脚 ⏻ 的暂停悄悄解掉。
+   */
+  function restartProbing({ resetProbe = false } = {}) {
+    if (resetProbe) probePaused = false;
     status = 'connecting';
     lastError = null;
-    if (running) {
-      timer = setInterval(() => probeOnce(), config.probeEveryMs);
-      void probeOnce();
-    }
+    syncTimer({ restart: true });
   }
 
   /**
@@ -289,6 +334,7 @@ export function createCollector({ config, fetchImpl = fetch, now = () => Date.no
       return fail(res, 400, err && err.message ? err.message : String(err));
     }
     const keyChanged = next.apiKey !== config.apiKey;
+    const probeChanged = next.probe !== config.probe;
     if (!configPath) {
       return fail(res, 500, '采集器启动时没有配置文件路径，改不了配置：请用 node collector.js <配置文件> 启动');
     }
@@ -298,13 +344,15 @@ export function createCollector({ config, fetchImpl = fetch, now = () => Date.no
       return fail(res, 500, '写配置文件失败（' + configPath + '）：' + (err && err.message ? err.message : String(err)));
     }
     applyConfig(next);
-    restartProbing();
+    restartProbing({ resetProbe: probeChanged });
+    const probe = probeInfo();
     log(
-      '配置已更新并热重启探测：model=' + config.model + ' baseUrl=' + config.baseUrl +
-      ' probeEveryMs=' + config.probeEveryMs + ' proxy=' + config.proxy +
+      (probe.enabled ? '配置已更新并热重启探测' : '配置已更新（主动探测当前关闭，不发任何额外调用）') +
+      '：model=' + config.model + ' baseUrl=' + config.baseUrl +
+      ' probeEveryMs=' + config.probeEveryMs + ' probe=' + (config.probe ? '开' : '关') + ' proxy=' + config.proxy +
       ' apiKey=' + (keyChanged ? '已更新' : '未改动（' + maskApiKey(config.apiKey) + '）')
     );
-    return sendJson(res, 200, { ok: true, restarted: running, config: configView() });
+    return sendJson(res, 200, { ok: true, restarted: probe.enabled, config: configView() });
   }
 
   /** 可选：OpenAI 兼容转发。key 只在服务端注入，客户端拿不到。 */
@@ -384,6 +432,24 @@ export function createCollector({ config, fetchImpl = fetch, now = () => Date.no
       if (req.method === 'POST') return void updateConfig(req, res);
       return fail(res, 405, '只支持 GET / POST');
     }
+    if (path === '/probe') {
+      if (req.method !== 'POST') return fail(res, 405, '只支持 POST');
+      return void (async () => {
+        let body;
+        try {
+          body = await readJsonBody(req);
+        } catch (err) {
+          return fail(res, 400, err.message);
+        }
+        if (typeof body.enabled !== 'boolean') return fail(res, 400, 'enabled 必须是布尔值（true 或 false）');
+        const probe = setProbeEnabled(body.enabled);
+        log(
+          '主动探测' + (probe.enabled ? '已恢复' : '已暂停') +
+          '（每 ' + probe.everyMs + 'ms 一次 ≈ ' + probe.probesPerDay + ' 次/天、约 ' + probe.tokensPerDayEstimate + ' token/天，估算）'
+        );
+        return sendJson(res, 200, { ok: true, probe });
+      })();
+    }
     if (path === '/config/test') {
       if (req.method !== 'POST') return fail(res, 405, '只支持 POST');
       return void (async () => {
@@ -407,19 +473,26 @@ export function createCollector({ config, fetchImpl = fetch, now = () => Date.no
     configView,
     testUpstream,
     probeOnce,
+    probeInfo,
+    setProbeEnabled,
+    isProbing: probeEnabled,
     get status() {
       return status;
     },
     start() {
       if (running) return;
       running = true;
-      probeOnce();
-      timer = setInterval(() => probeOnce(), config.probeEveryMs);
+      // 总开关关闭（probe:false）：定时器根本不挂 —— 只被动统计，零额外调用
+      if (config.probe === false) {
+        log('主动探测已关闭（probe: false）：只被动统计经过本机的流量，不发任何探测请求');
+        return;
+      }
+      syncTimer();
     },
     stop() {
       running = false;
-      if (timer !== null) clearInterval(timer);
-      timer = null;
+      probePaused = false;
+      syncTimer();
       controller.abort();
     },
   };
